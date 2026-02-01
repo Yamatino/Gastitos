@@ -26,6 +26,11 @@ interface AppState {
   
   isLoading: boolean
   setIsLoading: (loading: boolean) => void
+  
+  // Budget goals
+  budgets: Record<string, number> // category_id -> amount in cents
+  setBudget: (categoryId: string, amount: number) => void
+  removeBudget: (categoryId: string) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -99,12 +104,23 @@ export const useAppStore = create<AppState>()(
       
       isLoading: false,
       setIsLoading: (loading) => set({ isLoading: loading }),
+      
+      // Budget goals
+      budgets: {},
+      setBudget: (categoryId, amount) => set((state) => ({
+        budgets: { ...state.budgets, [categoryId]: amount }
+      })),
+      removeBudget: (categoryId) => set((state) => {
+        const { [categoryId]: _, ...rest } = state.budgets
+        return { budgets: rest }
+      }),
     }),
     {
       name: 'gastitos-storage',
       partialize: (state) => ({ 
         showUsd: state.showUsd,
-        exchangeRate: state.exchangeRate 
+        exchangeRate: state.exchangeRate,
+        budgets: state.budgets
       }),
     }
   )

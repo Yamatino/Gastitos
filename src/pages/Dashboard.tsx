@@ -3,20 +3,22 @@ import { useAppStore } from '../stores/appStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings, Download, Search } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings, Download, Search, Target } from 'lucide-react'
 import { AddExpenseModal } from '../components/AddExpenseModal'
 import { CategoryManager } from '../components/CategoryManager'
 import { AddIncomeModal } from '../components/AddIncomeModal'
 import { SummaryView } from '../components/SummaryView'
+import { BudgetManager } from '../components/BudgetManager'
 
 export function Dashboard() {
-  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate } = useAppStore()
+  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate, budgets } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false)
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'gastos' | 'resumen'>('gastos')
+  const [isBudgetManagerOpen, setIsBudgetManagerOpen] = useState(false)
 
   useEffect(() => {
     fetchExpenses()
@@ -281,7 +283,7 @@ export function Dashboard() {
       </div>
 
       {/* Action Buttons */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Button
           onClick={() => setIsIncomeModalOpen(true)}
           variant="outline"
@@ -298,7 +300,63 @@ export function Dashboard() {
           <Settings className="w-4 h-4 mr-2" />
           Categorías
         </Button>
+        <Button
+          onClick={() => setIsBudgetManagerOpen(true)}
+          variant="outline"
+          className="bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 py-3"
+        >
+          <Target className="w-4 h-4 mr-2" />
+          Presupuestos
+        </Button>
       </div>
+
+      {/* Budget Progress */}
+      {Object.keys(budgets).length > 0 && (
+        <div className="bg-white rounded-2xl p-4 shadow-lg border border-violet-100">
+          <h3 className="font-semibold text-gray-700 mb-3">Presupuestos</h3>
+          <div className="space-y-3">
+            {Object.entries(budgets).slice(0, 3).map(([categoryId, budgetAmount]) => {
+              const category = categories.find(c => c.id === categoryId)
+              if (!category) return null
+              
+              const spent = expenses
+                .filter(e => {
+                  const date = new Date(e.date)
+                  return e.category_id === categoryId && 
+                         date.getMonth() === currentMonth && 
+                         date.getFullYear() === currentYear && 
+                         e.amount_cents > 0
+                })
+                .reduce((sum, e) => sum + e.amount_cents, 0)
+              
+              const percentage = Math.min((spent / budgetAmount) * 100, 100)
+              const isOverBudget = spent > budgetAmount
+              
+              return (
+                <div key={categoryId}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="flex items-center gap-1">
+                      <span>{category.icon}</span>
+                      <span className="text-gray-700">{category.name}</span>
+                    </span>
+                    <span className={`font-semibold ${isOverBudget ? 'text-red-600' : 'text-gray-900'}`}>
+                      {formatCurrency(spent, 'ARS')} / {formatCurrency(budgetAmount, 'ARS')}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full ${
+                        isOverBudget ? 'bg-red-500' : percentage > 80 ? 'bg-amber-500' : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min(percentage, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Search and Export Bar */}
       <div className="flex gap-3">
@@ -411,6 +469,12 @@ export function Dashboard() {
       <CategoryManager
         isOpen={isCategoryManagerOpen}
         onClose={() => setIsCategoryManagerOpen(false)}
+      />
+
+      {/* Budget Manager */}
+      <BudgetManager
+        isOpen={isBudgetManagerOpen}
+        onClose={() => setIsBudgetManagerOpen(false)}
       />
       </div>
       )}
