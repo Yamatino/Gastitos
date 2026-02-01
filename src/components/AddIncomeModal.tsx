@@ -38,6 +38,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
     const day = String(d.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   })
+  const [countForNextMonth, setCountForNextMonth] = useState(false)
 
   // Filter only income categories
   const incomeCategories = categories.filter(c => c.type === 'income')
@@ -78,6 +79,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
       setAmount('')
       setDescription('')
       setCategoryId('')
+      setCountForNextMonth(false)
       // Reset date to today
       const today = new Date()
       setSelectedDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`)
@@ -149,18 +151,50 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Fecha
             </label>
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full"
-              required
-            />
-          </div>
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-full"
+            required
+          />
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Categoría
+        {/* Count for Next Month Checkbox */}
+        <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-xl">
+          <input
+            type="checkbox"
+            id="countForNextMonth"
+            checked={countForNextMonth}
+            onChange={(e) => {
+              const checked = e.target.checked
+              setCountForNextMonth(checked)
+              if (checked) {
+                // Set to 1st of next month
+                const today = new Date()
+                const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+                const year = nextMonth.getFullYear()
+                const month = String(nextMonth.getMonth() + 1).padStart(2, '0')
+                setSelectedDate(`${year}-${month}-01`)
+              } else {
+                // Reset to today
+                const today = new Date()
+                const year = today.getFullYear()
+                const month = String(today.getMonth() + 1).padStart(2, '0')
+                const day = String(today.getDate()).padStart(2, '0')
+                setSelectedDate(`${year}-${month}-${day}`)
+              }
+            }}
+            className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+          />
+          <label htmlFor="countForNextMonth" className="text-sm font-medium text-gray-700 cursor-pointer flex-1">
+            Contar para el mes siguiente (1ro del próximo mes)
+          </label>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Categoría
             </label>
             <div className="relative">
               <button
