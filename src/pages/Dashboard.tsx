@@ -3,9 +3,8 @@ import { useAppStore } from '../stores/appStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings, Download, Search, Target, Repeat, Trash2 } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Download, Search, Target, Repeat, Trash2 } from 'lucide-react'
 import { AddExpenseModal } from '../components/AddExpenseModal'
-import { CategoryManager } from '../components/CategoryManager'
 import { AddIncomeModal } from '../components/AddIncomeModal'
 import { SummaryView } from '../components/SummaryView'
 import { BudgetManager } from '../components/BudgetManager'
@@ -15,7 +14,6 @@ export function Dashboard() {
   const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate, budgets } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false)
-  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'gastos' | 'resumen'>('gastos')
@@ -368,7 +366,7 @@ export function Dashboard() {
       </div>
 
       {/* Action Buttons */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <Button
           onClick={() => setIsIncomeModalOpen(true)}
           variant="outline"
@@ -376,14 +374,6 @@ export function Dashboard() {
         >
           <TrendingUp className="w-4 h-4 mr-2" />
           Agregar Ingreso
-        </Button>
-        <Button
-          onClick={() => setIsCategoryManagerOpen(true)}
-          variant="outline"
-          className="bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100 py-3"
-        >
-          <Settings className="w-4 h-4 mr-2" />
-          Categorías
         </Button>
         <Button
           onClick={() => setIsBudgetManagerOpen(true)}
@@ -561,25 +551,31 @@ export function Dashboard() {
                 }}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    expense.payment_method === 'credit' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
-                  }`}>
-                    {expense.payment_method === 'credit' ? <CreditCard className="w-5 h-5" /> : <Wallet className="w-5 h-5" />}
-                  </div>
+                  {(() => {
+                    const category = categories.find(c => c.id === expense.category_id)
+                    return (
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                        style={{
+                          backgroundColor: category?.color ? `${category.color}20` : '#e5e7eb',
+                          color: category?.color || '#6b7280'
+                        }}
+                      >
+                        {category?.icon || '📦'}
+                      </div>
+                    )
+                  })()}
                   <div>
                     <p className="font-medium text-gray-900">
-                      {expense._isInstallmentGroup 
+                      {expense._isInstallmentGroup
                         ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '') // Remove (X/Y) from description
                         : expense.description}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {expense._isInstallmentGroup ? (
-                        <>
-                          {expense._displayText} • Próxima: {new Date(expense._nextPendingDate || expense.date).toLocaleDateString('es-AR')}
-                        </>
-                      ) : (
-                        new Date(expense.date).toLocaleDateString('es-AR')
-                      )}
+                      {(() => {
+                        const category = categories.find(c => c.id === expense.category_id)
+                        return category?.name || 'Sin categoría'
+                      })()} • {new Date(expense.date).toLocaleDateString('es-AR')}
                     </p>
                   </div>
                 </div>
@@ -627,12 +623,6 @@ export function Dashboard() {
         onSuccess={fetchExpenses}
         categories={categories}
         exchangeRate={exchangeRate}
-      />
-
-      {/* Category Manager */}
-      <CategoryManager
-        isOpen={isCategoryManagerOpen}
-        onClose={() => setIsCategoryManagerOpen(false)}
       />
 
       {/* Budget Manager */}

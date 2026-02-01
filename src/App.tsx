@@ -1,12 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from './services/supabase'
 import { useAppStore } from './stores/appStore'
 import { LoginPage } from './pages/LoginPage'
 import { Dashboard } from './pages/Dashboard'
+import { SettingsModal } from './components/SettingsModal'
 import { Button } from './components/ui/button'
+import { Settings } from 'lucide-react'
 
 function App() {
   const { user, setUser, isLoading, setIsLoading, initializeCategories } = useAppStore()
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   useEffect(() => {
     setIsLoading(true)
@@ -77,6 +80,15 @@ function App() {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-violet-700 hidden sm:block">{user.email}</span>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setIsSettingsOpen(true)} 
+              className="text-violet-700 p-2"
+              title="Configuración"
+            >
+              <Settings className="w-5 h-5" />
+            </Button>
             <Button variant="ghost" size="sm" onClick={handleLogout} className="text-violet-700">
               Salir
             </Button>
@@ -88,6 +100,12 @@ function App() {
       <main className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-6">
         <Dashboard />
       </main>
+
+      {/* Settings Modal */}
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+      />
     </div>
   )
 }
