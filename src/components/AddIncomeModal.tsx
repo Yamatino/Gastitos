@@ -19,6 +19,13 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
   const [categoryId, setCategoryId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date()
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  })
 
   // Filter only income categories
   const incomeCategories = categories.filter(c => c.type === 'income')
@@ -50,13 +57,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
         category_id: categoryId,
         payment_method: 'debit',
         is_installment: false,
-        date: (() => {
-          const d = new Date()
-          const year = d.getFullYear()
-          const month = String(d.getMonth() + 1).padStart(2, '0')
-          const day = String(d.getDate()).padStart(2, '0')
-          return `${year}-${month}-${day}`
-        })(),
+        date: selectedDate,
         status: 'paid',
       })
       if (error) throw error
@@ -65,6 +66,9 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
       setAmount('')
       setDescription('')
       setCategoryId('')
+      // Reset date to today
+      const today = new Date()
+      setSelectedDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`)
       
       onSuccess()
       onClose()
@@ -121,6 +125,20 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Ej: Sueldo mensual"
+              required
+            />
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Fecha
+            </label>
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="w-full"
               required
             />
           </div>

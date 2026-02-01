@@ -23,6 +23,13 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
   const [billingDay, setBillingDay] = useState(10)
   const [isLoading, setIsLoading] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date()
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  })
 
   if (!isOpen) return null
 
@@ -44,11 +51,11 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
         const installmentGroupId = crypto.randomUUID()
         const installmentAmount = Math.floor(amountCents / installments)
         const remainder = amountCents % installments
-        const today = new Date()
+        const baseDate = new Date(selectedDate + 'T12:00:00')
 
         const expensesToInsert = []
         for (let i = 0; i < installments; i++) {
-          const installmentDate = new Date(today.getFullYear(), today.getMonth() + i, billingDay)
+          const installmentDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, billingDay)
 
           const currentInstallmentAmount = i === 0 ? installmentAmount + remainder : installmentAmount
           const currentUsdAmount = Math.round(currentInstallmentAmount / exchangeRate)
@@ -92,13 +99,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
           payment_method: paymentMethod,
           is_installment: false,
           is_recurring: isRecurring,
-          date: (() => {
-          const d = new Date()
-          const year = d.getFullYear()
-          const month = String(d.getMonth() + 1).padStart(2, '0')
-          const day = String(d.getDate()).padStart(2, '0')
-          return `${year}-${month}-${day}`
-        })(),
+          date: selectedDate,
           status: 'paid',
         })
         if (error) throw error
@@ -112,6 +113,13 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
       setInstallments(1)
       setIsRecurring(false)
       setBillingDay(10)
+      
+      // Reset date to today
+      const d = new Date()
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      setSelectedDate(`${year}-${month}-${day}`)
       
       onSuccess()
       onClose()
@@ -176,6 +184,20 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Ej: Cena con amigos"
+              required
+            />
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Fecha
+            </label>
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="w-full"
               required
             />
           </div>
