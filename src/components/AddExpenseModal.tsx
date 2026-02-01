@@ -67,7 +67,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
             installment_number: i + 1,
             total_installments: installments,
             installment_amount_cents: currentInstallmentAmount,
-            date: installmentDate.toISOString().split('T')[0],
+            date: installmentDate.toLocaleDateString('en-CA'),
             status: i === 0 ? 'paid' : 'pending',
           })
         }
@@ -87,7 +87,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
           payment_method: paymentMethod,
           is_installment: false,
           is_recurring: isRecurring,
-          date: new Date().toISOString().split('T')[0],
+          date: new Date().toLocaleDateString('en-CA'),
           status: 'paid',
         })
         if (error) throw error

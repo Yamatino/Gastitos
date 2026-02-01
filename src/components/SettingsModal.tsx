@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { X, Settings, Moon, Sun, DollarSign, Bell, Target, CreditCard, Plus, Trash2 } from 'lucide-react'
+import { X, Settings, DollarSign, Bell, Target, CreditCard, Plus, Trash2 } from 'lucide-react'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -19,7 +19,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   } = useAppStore()
   
   const [activeTab, setActiveTab] = useState<'general' | 'cuotas' | 'categorias'>('general')
-  const [isDarkMode, setIsDarkMode] = useState(false)
   const [budgetAlertThreshold, setBudgetAlertThreshold] = useState(80)
   const [billingDay, setBillingDay] = useState(10)
   
@@ -173,24 +172,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 </div>
               </div>
 
-              {/* Dark Mode */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-gray-200 text-gray-700 rounded-lg">
-                    {isDarkMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900">Modo oscuro</p>
-                    <p className="text-sm text-gray-500">Cambiar apariencia de la app</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setIsDarkMode(!isDarkMode)}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300"
-                >
-                  {isDarkMode ? 'Desactivar' : 'Activar'}
-                </button>
-              </div>
+
             </div>
           )}
 

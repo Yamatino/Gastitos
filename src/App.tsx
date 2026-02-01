@@ -26,9 +26,8 @@ function App() {
       setUser(session?.user ?? null)
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         setIsLoading(false)
-        if (event === 'SIGNED_IN') {
-          initializeCategories()
-        }
+        // Initialize categories for both new sign-ins and existing sessions
+        initializeCategories()
       }
     })
 
