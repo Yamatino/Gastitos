@@ -15,6 +15,8 @@ interface AppState {
   categories: Category[]
   setCategories: (categories: Category[]) => void
   initializeCategories: () => Promise<void>
+  addCategory: (category: Omit<Category, 'id' | 'user_id' | 'created_at'>) => Promise<void>
+  removeCategory: (id: string) => Promise<void>
   
   showUsd: boolean
   toggleShowUsd: () => void
@@ -46,11 +48,11 @@ export const useAppStore = create<AppState>()(
         
         const defaultCategories = [
           { name: 'Salario', icon: '💰', color: '#10B981', is_default: true },
-          { name: 'Comida', icon: '🍔', color: '#F59E0B', is_default: true },
+          { name: 'Casa', icon: '🏠', color: '#8B5CF6', is_default: true },
+          { name: 'Supermercado', icon: '🛒', color: '#F59E0B', is_default: true },
+          { name: 'Salida', icon: '🍻', color: '#EC4899', is_default: true },
           { name: 'Transporte', icon: '🚗', color: '#3B82F6', is_default: true },
-          { name: 'Entretenimiento', icon: '🎬', color: '#EC4899', is_default: true },
           { name: 'Servicios', icon: '💡', color: '#6B7280', is_default: true },
-          { name: 'Compras', icon: '🛍️', color: '#8B5CF6', is_default: true },
         ]
         
         const { data, error } = await supabase.from('categories').insert(defaultCategories).select()
@@ -58,6 +60,24 @@ export const useAppStore = create<AppState>()(
           console.error('Error creating default categories:', error)
         } else {
           set({ categories: data || [] })
+        }
+      },
+      addCategory: async (category) => {
+        const { data, error } = await supabase.from('categories').insert(category).select()
+        if (error) {
+          console.error('Error adding category:', error)
+          throw error
+        } else if (data) {
+          set((state) => ({ categories: [...state.categories, data[0]] }))
+        }
+      },
+      removeCategory: async (id) => {
+        const { error } = await supabase.from('categories').delete().eq('id', id)
+        if (error) {
+          console.error('Error removing category:', error)
+          throw error
+        } else {
+          set((state) => ({ categories: state.categories.filter(c => c.id !== id) }))
         }
       },
       

@@ -3,12 +3,16 @@ import { useAppStore } from '../stores/appStore'
 import { supabase } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings } from 'lucide-react'
 import { AddExpenseModal } from '../components/AddExpenseModal'
+import { CategoryManager } from '../components/CategoryManager'
+import { AddIncomeModal } from '../components/AddIncomeModal'
 
 export function Dashboard() {
   const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false)
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -57,13 +61,23 @@ export function Dashboard() {
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
   
-  const monthlyExpenses = expenses.filter(expense => {
+  const monthlyTransactions = expenses.filter(expense => {
     const expenseDate = new Date(expense.date)
     return expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear
   })
 
-  const totalArs = monthlyExpenses.reduce((sum, expense) => sum + expense.amount_cents, 0)
-  const totalUsd = monthlyExpenses.reduce((sum, expense) => sum + (expense.usd_amount_cents || 0), 0)
+  // Separate income (negative amounts) from expenses (positive amounts)
+  const monthlyIncome = monthlyTransactions.filter(t => t.amount_cents < 0)
+  const monthlyExpensesList = monthlyTransactions.filter(t => t.amount_cents > 0)
+
+  const totalIncomeArs = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
+  const totalIncomeUsd = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.usd_amount_cents || 0), 0)
+  
+  const totalExpensesArs = monthlyExpensesList.reduce((sum, t) => sum + t.amount_cents, 0)
+  const totalExpensesUsd = monthlyExpensesList.reduce((sum, t) => sum + (t.usd_amount_cents || 0), 0)
+
+  const balanceArs = totalIncomeArs - totalExpensesArs
+  const balanceUsd = totalIncomeUsd - totalExpensesUsd
 
   const pendingCuotas = expenses.filter(e => 
     e.is_installment && 
@@ -98,11 +112,27 @@ export function Dashboard() {
         
         <div className="text-center">
           <div className="text-4xl font-bold text-violet-600 mb-1">
-            {showUsd ? formatCurrency(totalUsd, 'USD') : formatCurrency(totalArs, 'ARS')}
+            {showUsd ? formatCurrency(balanceUsd, 'USD') : formatCurrency(balanceArs, 'ARS')}
           </div>
           <p className="text-sm text-gray-500">
-            {showUsd ? `≈ ${formatCurrency(totalArs, 'ARS')}` : `≈ ${formatCurrency(totalUsd, 'USD')}`}
+            Balance del mes
           </p>
+        </div>
+        
+        {/* Income vs Expenses */}
+        <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">Ingresos</p>
+            <p className="text-lg font-semibold text-emerald-600">
+              {showUsd ? formatCurrency(totalIncomeUsd, 'USD') : formatCurrency(totalIncomeArs, 'ARS')}
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-gray-500 mb-1">Gastos</p>
+            <p className="text-lg font-semibold text-red-500">
+              {showUsd ? formatCurrency(totalExpensesUsd, 'USD') : formatCurrency(totalExpensesArs, 'ARS')}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -134,10 +164,30 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Action Buttons */}
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          onClick={() => setIsIncomeModalOpen(true)}
+          variant="outline"
+          className="bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 py-3"
+        >
+          <TrendingUp className="w-4 h-4 mr-2" />
+          Agregar Ingreso
+        </Button>
+        <Button
+          onClick={() => setIsCategoryManagerOpen(true)}
+          variant="outline"
+          className="bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100 py-3"
+        >
+          <Settings className="w-4 h-4 mr-2" />
+          Categorías
+        </Button>
+      </div>
+
       {/* Recent Expenses */}
       <div className="bg-white rounded-2xl shadow-lg border border-violet-100 overflow-hidden">
         <div className="p-4 border-b border-violet-100">
-          <h3 className="font-semibold text-gray-700">Gastos Recientes</h3>
+          <h3 className="font-semibold text-gray-700">Transacciones Recientes</h3>
         </div>
         
         {expenses.length === 0 ? (
@@ -165,8 +215,14 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold text-violet-600">
-                    {showUsd ? formatCurrency(expense.usd_amount_cents || 0, 'USD') : formatCurrency(expense.amount_cents, 'ARS')}
+                  <p className={`font-semibold ${
+                    expense.amount_cents < 0 ? 'text-emerald-600' : 'text-violet-600'
+                  }`}>
+                    {expense.amount_cents < 0 ? '+' : ''}
+                    {showUsd 
+                      ? formatCurrency(Math.abs(expense.usd_amount_cents || 0), 'USD') 
+                      : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
+                    }
                   </p>
                 </div>
               </div>
@@ -193,6 +249,21 @@ export function Dashboard() {
         onSuccess={fetchExpenses}
         categories={categories}
         exchangeRate={exchangeRate}
+      />
+
+      {/* Add Income Modal */}
+      <AddIncomeModal
+        isOpen={isIncomeModalOpen}
+        onClose={() => setIsIncomeModalOpen(false)}
+        onSuccess={fetchExpenses}
+        categories={categories}
+        exchangeRate={exchangeRate}
+      />
+
+      {/* Category Manager */}
+      <CategoryManager
+        isOpen={isCategoryManagerOpen}
+        onClose={() => setIsCategoryManagerOpen(false)}
       />
     </div>
   )
