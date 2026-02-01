@@ -9,18 +9,32 @@ import {
   LineChart, Line
 } from 'recharts'
 import { CreditCard, TrendingUp, Calendar, DollarSign, Trash2, Package } from 'lucide-react'
+import { fetchInflationData, type ProcessedInflation } from '../services/inflation'
 
 export function SummaryView() {
   const { expenses, categories, exchangeRate, showUsd } = useAppStore()
   const [isLoading, setIsLoading] = useState(true)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null)
+  const [inflationData, setInflationData] = useState<ProcessedInflation | null>(null)
+  const [isLoadingInflation, setIsLoadingInflation] = useState(true)
 
   useEffect(() => {
     setIsLoading(false)
   }, [expenses])
 
-  if (isLoading) {
+  useEffect(() => {
+    const loadInflation = async () => {
+      setIsLoadingInflation(true)
+      const data = await fetchInflationData()
+      setInflationData(data)
+      setIsLoadingInflation(false)
+    }
+    
+    loadInflation()
+  }, [])
+
+  if (isLoading || isLoadingInflation) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-violet-600">Cargando resumen...</div>
@@ -215,6 +229,44 @@ export function SummaryView() {
         </div>
       </div>
 
+      {/* Inflation Card */}
+      {inflationData?.latest && (
+        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-6 text-white">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="bg-white/20 p-2 rounded-lg">
+              <span className="text-xl">📈</span>
+            </div>
+            <h2 className="text-lg font-semibold">Inflación Oficial</h2>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-3xl font-bold">
+                {inflationData.latest.valor.toFixed(1)}%
+              </div>
+              <p className="text-sm opacity-90 mt-1">
+                {new Date(inflationData.latest.fecha).toLocaleDateString('es-AR', { 
+                  month: 'long', 
+                  year: 'numeric' 
+                })}
+              </p>
+            </div>
+            <div>
+              <div className="text-3xl font-bold">
+                {inflationData.cumulativeSixMonths.toFixed(1)}%
+              </div>
+              <p className="text-sm opacity-90 mt-1">
+                Acumulado 6 meses
+              </p>
+            </div>
+          </div>
+          
+          <p className="text-xs opacity-70 mt-3">
+            Fuente: INDEC vía ArgentinaDatos
+          </p>
+        </div>
+      )}
+
       {/* Monthly Comparison Chart */}
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
         <h3 className="text-lg font-semibold text-gray-700 mb-4">Ingresos vs Gastos (Últimos 6 meses)</h3>
@@ -298,6 +350,74 @@ export function SummaryView() {
           </div>
         </div>
       </div>
+
+      {/* Purchasing Power Impact */}
+      {inflationData && inflationData.cumulativeSixMonths > 0 && (() => {
+        // Get expenses from 6 months ago
+        const sixMonthsAgo = new Date()
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+        
+        const oldExpenses = expenses.filter(e => {
+          const date = new Date(e.date + 'T12:00:00')
+          return date.getMonth() === sixMonthsAgo.getMonth() && 
+                 date.getFullYear() === sixMonthsAgo.getFullYear() &&
+                 e.amount_cents > 0
+        })
+        
+        const cumulativeInflation = inflationData.cumulativeSixMonths
+        
+        return (
+          <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="bg-amber-100 p-2 rounded-lg">
+                <span className="text-xl">💸</span>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700">Impacto en tu Poder Adquisitivo</h3>
+            </div>
+            
+            <div className="space-y-4">
+              {oldExpenses.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">
+                  No hay gastos registrados de hace 6 meses para comparar
+                </p>
+              ) : (() => {
+                const oldTotal = oldExpenses.reduce((sum, e) => sum + e.amount_cents, 0)
+                const adjustedTotal = oldTotal * (1 + cumulativeInflation / 100)
+                
+                return (
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+                      <div>
+                        <p className="text-sm text-gray-600">Gastos de {sixMonthsAgo.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</p>
+                        <p className="text-xs text-gray-400">Sin ajustar</p>
+                      </div>
+                      <span className="text-xl font-bold text-gray-900">
+                        {showUsd ? formatCurrency(oldTotal * (exchangeRate / 100) / 100, 'USD') : formatCurrency(oldTotal, 'ARS')}
+                      </span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center p-4 bg-amber-50 rounded-xl border border-amber-200">
+                      <div>
+                        <p className="text-sm text-amber-900">Equivalente hoy</p>
+                        <p className="text-xs text-amber-700">Ajustado por inflación ({cumulativeInflation.toFixed(1)}%)</p>
+                      </div>
+                      <span className="text-xl font-bold text-amber-700">
+                        {showUsd ? formatCurrency(adjustedTotal * (exchangeRate / 100) / 100, 'USD') : formatCurrency(adjustedTotal, 'ARS')}
+                      </span>
+                    </div>
+                    
+                    <div className="text-center p-3 bg-red-50 rounded-lg">
+                      <p className="text-sm text-red-700">
+                        <span className="font-bold">Pérdida de poder adquisitivo:</span> Tus gastos de hace 6 meses equivalen a {((adjustedTotal / oldTotal - 1) * 100).toFixed(1)}% más hoy
+                      </p>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Daily Spending Trend */}
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
