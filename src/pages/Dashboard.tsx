@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../stores/appStore'
-import { supabase } from '../services/supabase'
+import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
 import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings } from 'lucide-react'
@@ -9,7 +9,7 @@ import { CategoryManager } from '../components/CategoryManager'
 import { AddIncomeModal } from '../components/AddIncomeModal'
 
 export function Dashboard() {
-  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate } = useAppStore()
+  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false)
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
@@ -47,13 +47,18 @@ export function Dashboard() {
 
   const fetchExchangeRate = async () => {
     try {
-      // Fetch from Banco Nación API (or use a mock for now)
-      // In production, replace with actual API call
-      // For now, we'll use a default rate
-      // const response = await fetch('https://api.bcra.gob.ar/estadisticas/v1/principalesvariables')
-      // const data = await response.json()
+      const response = await fetch('https://api.bluelytics.com.ar/v2/latest')
+      if (!response.ok) throw new Error('Failed to fetch exchange rate')
+      const data = await response.json()
+      
+      // Use the official "oficial" rate from BlueLytics
+      const oficialRate = data.oficial?.value_sell || data.oficial?.value_avg
+      if (oficialRate) {
+        setExchangeRate(oficialRate)
+      }
     } catch (err) {
       console.error('Error fetching exchange rate:', err)
+      // Keep default rate if API fails
     }
   }
 
@@ -85,6 +90,51 @@ export function Dashboard() {
     new Date(e.date) <= new Date()
   )
 
+  // Group installments by installment_group_id for display
+  const getGroupedTransactions = () => {
+    const grouped = new Map()
+    
+    expenses.forEach(expense => {
+      if (expense.is_installment && expense.installment_group_id) {
+        // Group by installment_group_id
+        if (!grouped.has(expense.installment_group_id)) {
+          grouped.set(expense.installment_group_id, {
+            ...expense,
+            _isGrouped: true,
+            _installments: []
+          })
+        }
+        grouped.get(expense.installment_group_id)._installments.push(expense)
+      } else {
+        // Non-installment expense - keep as is
+        grouped.set(expense.id, expense)
+      }
+    })
+    
+    return Array.from(grouped.values()).map(group => {
+      if (group._isGrouped) {
+        // Calculate total and find next pending
+        const total = group._installments.reduce((sum: number, inst: Expense) => sum + inst.amount_cents, 0)
+        const totalUsd = group._installments.reduce((sum: number, inst: Expense) => sum + (inst.usd_amount_cents || 0), 0)
+        const nextPending = group._installments
+          .filter((inst: Expense) => inst.status === 'pending')
+          .sort((a: Expense, b: Expense) => new Date(a.date).getTime() - new Date(b.date).getTime())[0]
+        
+        return {
+          ...group,
+          amount_cents: total,
+          usd_amount_cents: totalUsd,
+          _displayText: `Cuota ${group.installment_number}/${group.total_installments}`,
+          _nextPendingDate: nextPending?.date,
+          _isInstallmentGroup: true
+        }
+      }
+      return group
+    })
+  }
+
+  const groupedExpenses = getGroupedTransactions()
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -111,8 +161,14 @@ export function Dashboard() {
         </div>
         
         <div className="text-center">
-          <div className="text-4xl font-bold text-violet-600 mb-1">
-            {showUsd ? formatCurrency(balanceUsd, 'USD') : formatCurrency(balanceArs, 'ARS')}
+          <div className={`text-4xl font-bold mb-1 ${
+            balanceArs >= 0 ? 'text-emerald-600' : 'text-red-500'
+          }`}>
+            {balanceArs >= 0 ? '+' : '−'}
+            {showUsd 
+              ? formatCurrency(Math.abs(balanceUsd), 'USD') 
+              : formatCurrency(Math.abs(balanceArs), 'ARS')
+            }
           </div>
           <p className="text-sm text-gray-500">
             Balance del mes
@@ -198,7 +254,7 @@ export function Dashboard() {
           </div>
         ) : (
           <div className="divide-y divide-violet-50">
-            {expenses.slice(0, 5).map((expense) => (
+             {groupedExpenses.slice(0, 8).map((expense) => (
               <div key={expense.id} className="p-4 flex items-center justify-between hover:bg-violet-50/50">
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
@@ -207,10 +263,19 @@ export function Dashboard() {
                     {expense.payment_method === 'credit' ? <CreditCard className="w-5 h-5" /> : <Wallet className="w-5 h-5" />}
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">{expense.description}</p>
+                    <p className="font-medium text-gray-900">
+                      {expense._isInstallmentGroup 
+                        ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '') // Remove (X/Y) from description
+                        : expense.description}
+                    </p>
                     <p className="text-xs text-gray-500">
-                      {new Date(expense.date).toLocaleDateString('es-AR')}
-                      {expense.is_installment && ` • Cuota ${expense.installment_number}/${expense.total_installments}`}
+                      {expense._isInstallmentGroup ? (
+                        <>
+                          {expense._displayText} • Próxima: {new Date(expense._nextPendingDate || expense.date).toLocaleDateString('es-AR')}
+                        </>
+                      ) : (
+                        new Date(expense.date).toLocaleDateString('es-AR')
+                      )}
                     </p>
                   </div>
                 </div>
