@@ -11,14 +11,49 @@ function App() {
   useEffect(() => {
     setIsLoading(true)
     
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      setIsLoading(false)
-    })
+    // Handle OAuth callback if present
+    const handleAuthCallback = async () => {
+      try {
+        // Check for auth code in URL (OAuth callback)
+        const hash = window.location.hash
+        const params = new URLSearchParams(window.location.search)
+        const code = params.get('code')
+        
+        console.log('Checking auth callback, code:', code ? 'present' : 'none', 'hash:', hash ? 'present' : 'none')
+        
+        // If there's a code in the URL, exchange it for a session
+        if (code) {
+          console.log('Exchanging code for session...')
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+          if (error) {
+            console.error('Code exchange error:', error)
+          } else {
+            console.log('Session exchanged successfully:', data.session?.user?.email)
+          }
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname)
+        }
+        
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('Session error:', error)
+        }
+        
+        console.log('Current session:', session?.user?.email ?? 'none')
+        setUser(session?.user ?? null)
+      } catch (err) {
+        console.error('Auth callback error:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    handleAuthCallback()
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event, session?.user?.email)
       setUser(session?.user ?? null)
     })
 
