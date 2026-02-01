@@ -25,6 +25,9 @@ export type Expense = {
   is_recurring: boolean
   recurring_parent_id: string | null
   created_at: string
+  // USD payment tracking
+  original_currency?: 'ARS' | 'USD'
+  original_amount_cents?: number
 }
 
 export type Category = {
@@ -34,6 +37,6 @@ export type Category = {
   icon: string
   color: string
   is_default: boolean
-  type: 'income' | 'expense'
+  type: 'income' | 'expense' | 'savings'
   created_at: string
 }

@@ -15,12 +15,15 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     addCategory, 
     removeCategory,
     showUsd, 
-    toggleShowUsd
+    toggleShowUsd,
+    monthlySavingsGoalUSD,
+    setMonthlySavingsGoalUSD
   } = useAppStore()
   
   const [activeTab, setActiveTab] = useState<'general' | 'cuotas' | 'categorias'>('general')
   const [budgetAlertThreshold, setBudgetAlertThreshold] = useState(80)
   const [billingDay, setBillingDay] = useState(10)
+  const [savingsGoalInput, setSavingsGoalInput] = useState(monthlySavingsGoalUSD.toString())
   
   // Category management states
   const [isAddingCategory, setIsAddingCategory] = useState(false)
@@ -144,6 +147,46 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 >
                   Cambiar a {showUsd ? 'ARS' : 'USD'}
                 </button>
+              </div>
+
+              {/* Savings Goal */}
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                    <span className="text-xl">💎</span>
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">Meta de Ahorro Mensual</p>
+                    <p className="text-sm text-gray-500">Meta actual: ${monthlySavingsGoalUSD} USD</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">US$</span>
+                    <Input
+                      type="number"
+                      step="1"
+                      value={savingsGoalInput}
+                      onChange={(e) => setSavingsGoalInput(e.target.value)}
+                      placeholder="0"
+                      className="pl-10"
+                    />
+                  </div>
+                  <Button 
+                    onClick={() => {
+                      const value = parseFloat(savingsGoalInput)
+                      if (!isNaN(value) && value >= 0) {
+                        setMonthlySavingsGoalUSD(value)
+                      }
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    Guardar
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Esta meta se aplicará a todos los meses futuros
+                </p>
               </div>
 
               {/* Budget Alert */}

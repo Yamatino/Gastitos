@@ -31,6 +31,10 @@ interface AppState {
   budgets: Record<string, number> // category_id -> amount in cents
   setBudget: (categoryId: string, amount: number) => void
   removeBudget: (categoryId: string) => void
+  
+  // Savings goal
+  monthlySavingsGoalUSD: number
+  setMonthlySavingsGoalUSD: (amount: number) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -63,6 +67,7 @@ export const useAppStore = create<AppState>()(
         const defaultCategories = [
           { name: 'Salario', icon: '💰', color: '#10B981', is_default: true, user_id: user.id, type: 'income' },
           { name: 'Otros', icon: '📥', color: '#6B7280', is_default: true, user_id: user.id, type: 'income' },
+          { name: 'Ahorro', icon: '💎', color: '#3B82F6', is_default: true, user_id: user.id, type: 'savings' },
           { name: 'Supermercado', icon: '🛒', color: '#F59E0B', is_default: true, user_id: user.id, type: 'expense' },
           { name: 'Salida', icon: '🍻', color: '#EC4899', is_default: true, user_id: user.id, type: 'expense' },
           { name: 'Transporte', icon: '🚗', color: '#3B82F6', is_default: true, user_id: user.id, type: 'expense' },
@@ -135,13 +140,18 @@ export const useAppStore = create<AppState>()(
         const { [categoryId]: _, ...rest } = state.budgets
         return { budgets: rest }
       }),
+      
+      // Savings goal
+      monthlySavingsGoalUSD: 0,
+      setMonthlySavingsGoalUSD: (amount) => set({ monthlySavingsGoalUSD: amount }),
     }),
     {
       name: 'gastitos-storage',
       partialize: (state) => ({ 
         showUsd: state.showUsd,
         exchangeRate: state.exchangeRate,
-        budgets: state.budgets
+        budgets: state.budgets,
+        monthlySavingsGoalUSD: state.monthlySavingsGoalUSD
       }),
     }
   )

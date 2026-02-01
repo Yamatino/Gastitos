@@ -46,6 +46,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
     const day = String(d.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   })
+  const [currency, setCurrency] = useState<'ARS' | 'USD'>('ARS')
 
   if (!isOpen) return null
 
@@ -56,8 +57,23 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
     setIsLoading(true)
 
     try {
-      const amountCents = Math.round(getRawNumber(amount) * 100)
-      const usdAmountCents = Math.round(amountCents / exchangeRate)
+      let amountCents: number
+      let usdAmountCents: number
+      let originalAmountCents: number | undefined
+
+      const rawAmount = getRawNumber(amount)
+
+      if (currency === 'USD') {
+        // User entered amount in USD
+        originalAmountCents = Math.round(rawAmount * 100)
+        amountCents = Math.round(originalAmountCents * exchangeRate)
+        usdAmountCents = originalAmountCents
+      } else {
+        // User entered amount in ARS
+        amountCents = Math.round(rawAmount * 100)
+        usdAmountCents = Math.round(amountCents / exchangeRate)
+        originalAmountCents = undefined // Not needed for ARS
+      }
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user')
@@ -83,6 +99,8 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
             currency: 'ARS',
             exchange_rate: exchangeRate,
             usd_amount_cents: currentUsdAmount,
+            original_currency: currency === 'USD' ? 'USD' : undefined,
+            original_amount_cents: currency === 'USD' ? Math.round(currentInstallmentAmount / exchangeRate) : undefined,
             category_id: categoryId,
             payment_method: 'credit',
             is_installment: true,
@@ -111,6 +129,8 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
           currency: 'ARS',
           exchange_rate: exchangeRate,
           usd_amount_cents: usdAmountCents,
+          original_currency: currency === 'USD' ? 'USD' : undefined,
+          original_amount_cents: originalAmountCents,
           category_id: categoryId,
           payment_method: paymentMethod,
           is_installment: false,
@@ -129,6 +149,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
       setInstallments(1)
       setIsRecurring(false)
       setBillingDay(10)
+      setCurrency('ARS')
       
       // Reset date to today
       const d = new Date()
@@ -174,10 +195,10 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
           {/* Amount */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Monto (ARS)
+              Monto ({currency})
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">{currency === 'ARS' ? '$' : 'US$'}</span>
               <Input
                 type="text"
                 value={amount}
@@ -187,9 +208,34 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                   setAmount(formattedValue)
                 }}
                 placeholder="0"
-                className="pl-8 text-lg font-mono"
+                className="pl-12 text-lg font-mono"
                 required
               />
+            </div>
+            {/* Currency Toggle */}
+            <div className="flex gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => setCurrency('ARS')}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                  currency === 'ARS'
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                ARS ($)
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrency('USD')}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                  currency === 'USD'
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                USD (US$)
+              </button>
             </div>
           </div>
 

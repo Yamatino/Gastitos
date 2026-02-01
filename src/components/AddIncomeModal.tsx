@@ -41,7 +41,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
   const [countForNextMonth, setCountForNextMonth] = useState(false)
 
   // Filter only income categories
-  const incomeCategories = categories.filter(c => c.type === 'income')
+  const incomeCategories = categories.filter(c => c.type === 'income' || c.type === 'savings')
 
   if (!isOpen) return null
 

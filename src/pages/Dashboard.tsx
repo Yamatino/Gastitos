@@ -11,7 +11,7 @@ import { BudgetManager } from '../components/BudgetManager'
 import { RecurringManager } from '../components/RecurringManager'
 
 export function Dashboard() {
-  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate, budgets } = useAppStore()
+  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate, budgets, monthlySavingsGoalUSD } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -190,6 +190,19 @@ export function Dashboard() {
 
   const balanceArs = totalIncomeArs - totalExpensesArs
   const balanceUsd = totalIncomeUsd - totalExpensesUsd
+  
+  // Calculate savings (Ahorro category)
+  const monthlySavings = monthlyTransactions.filter(t => {
+    const category = categories.find(c => c.id === t.category_id)
+    return category?.type === 'savings'
+  })
+  const totalSavingsArs = monthlySavings.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
+  const totalSavingsUsd = monthlySavings.reduce((sum, t) => sum + Math.abs(t.usd_amount_cents || 0), 0)
+  
+  // Convert savings goal to ARS using exchange rate at month start
+  const monthStartRate = exchangeRate || 1000
+  const savingsGoalArs = monthlySavingsGoalUSD * monthStartRate * 100 // Convert to cents
+  const savingsProgress = savingsGoalArs > 0 ? Math.min((totalSavingsArs / savingsGoalArs) * 100, 100) : 0
 
   const pendingCuotas = expenses.filter(e => 
     e.is_installment && 
@@ -336,6 +349,45 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Savings Card */}
+      {monthlySavingsGoalUSD > 0 && (
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-2xl">💎</span>
+            <h2 className="text-lg font-semibold">Ahorro del Mes</h2>
+          </div>
+          <div className="text-3xl font-bold mb-3">
+            {showUsd 
+              ? formatCurrency(totalSavingsUsd, 'USD')
+              : formatCurrency(totalSavingsArs, 'ARS')
+            }
+          </div>
+          <div className="flex gap-4 text-sm">
+            <div className="bg-white/20 rounded-lg px-3 py-2">
+              <span className="opacity-80">Meta:</span>
+              <span className="font-semibold ml-1">
+                US${monthlySavingsGoalUSD}
+              </span>
+            </div>
+            <div className="bg-white/20 rounded-lg px-3 py-2">
+              <span className="opacity-80">Progreso:</span>
+              <span className="font-semibold ml-1">
+                {savingsProgress.toFixed(0)}%
+              </span>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div className="mt-3">
+            <div className="h-2 bg-white/30 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-white rounded-full transition-all"
+                style={{ width: `${savingsProgress}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 gap-4">
