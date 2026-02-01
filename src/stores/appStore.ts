@@ -51,12 +51,15 @@ export const useAppStore = create<AppState>()(
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
         
-        const { data: existing } = await supabase.from('categories').select('*').eq('user_id', user.id).limit(1)
-        if (existing && existing.length > 0) {
-          set({ categories: existing })
-          return
-        }
+        // Fetch all existing categories for this user
+        const { data: existingCategories } = await supabase
+          .from('categories')
+          .select('*')
+          .eq('user_id', user.id)
         
+        const existingNames = new Set(existingCategories?.map(c => c.name.toLowerCase()) || [])
+        
+        // Define all default categories that should exist
         const defaultCategories = [
           { name: 'Salario', icon: '💰', color: '#10B981', is_default: true, user_id: user.id, type: 'income' },
           { name: 'Otros', icon: '📥', color: '#6B7280', is_default: true, user_id: user.id, type: 'income' },
@@ -66,12 +69,30 @@ export const useAppStore = create<AppState>()(
           { name: 'Servicios', icon: '💡', color: '#6B7280', is_default: true, user_id: user.id, type: 'expense' },
         ]
         
-        const { data, error } = await supabase.from('categories').insert(defaultCategories).select()
-        if (error) {
-          console.error('Error creating default categories:', error)
-        } else {
-          set({ categories: data || [] })
+        // Find which default categories are missing
+        const missingDefaults = defaultCategories.filter(
+          cat => !existingNames.has(cat.name.toLowerCase())
+        )
+        
+        // Insert missing default categories
+        if (missingDefaults.length > 0) {
+          const { data: newCategories, error } = await supabase
+            .from('categories')
+            .insert(missingDefaults)
+            .select()
+          
+          if (error) {
+            console.error('Error creating default categories:', error)
+          } else if (newCategories) {
+            // Combine existing and new categories
+            const allCategories = [...(existingCategories || []), ...newCategories]
+            set({ categories: allCategories })
+            return
+          }
         }
+        
+        // If no missing defaults, just set existing categories
+        set({ categories: existingCategories || [] })
       },
       addCategory: async (category) => {
         const { data: { user } } = await supabase.auth.getUser()

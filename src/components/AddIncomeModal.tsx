@@ -50,7 +50,13 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
         category_id: categoryId,
         payment_method: 'debit',
         is_installment: false,
-        date: new Date().toLocaleDateString('en-CA'),
+        date: (() => {
+          const d = new Date()
+          const year = d.getFullYear()
+          const month = String(d.getMonth() + 1).padStart(2, '0')
+          const day = String(d.getDate()).padStart(2, '0')
+          return `${year}-${month}-${day}`
+        })(),
         status: 'paid',
       })
       if (error) throw error
