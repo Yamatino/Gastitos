@@ -32,7 +32,8 @@ export function CategoryManager({ isOpen, onClose }: CategoryManagerProps) {
         name: newCategoryName.trim(),
         icon: selectedIcon,
         color: selectedColor,
-        is_default: false
+        is_default: false,
+        type: 'expense'
       })
       setNewCategoryName('')
       setIsAdding(false)

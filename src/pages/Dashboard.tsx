@@ -7,6 +7,7 @@ import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings } from '
 import { AddExpenseModal } from '../components/AddExpenseModal'
 import { CategoryManager } from '../components/CategoryManager'
 import { AddIncomeModal } from '../components/AddIncomeModal'
+import { SummaryView } from '../components/SummaryView'
 
 export function Dashboard() {
   const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate } = useAppStore()
@@ -14,6 +15,7 @@ export function Dashboard() {
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false)
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'gastos' | 'resumen'>('gastos')
 
   useEffect(() => {
     fetchExpenses()
@@ -145,7 +147,33 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Total Card */}
+      {/* Tab Navigation */}
+      <div className="flex bg-white rounded-xl p-1 shadow-sm border border-violet-100">
+        <button
+          onClick={() => setActiveTab('gastos')}
+          className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+            activeTab === 'gastos'
+              ? 'bg-violet-600 text-white shadow-sm'
+              : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          Gastos
+        </button>
+        <button
+          onClick={() => setActiveTab('resumen')}
+          className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+            activeTab === 'resumen'
+              ? 'bg-violet-600 text-white shadow-sm'
+              : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          Resumen
+        </button>
+      </div>
+
+      {activeTab === 'gastos' && (
+        <div className="space-y-6">
+          {/* Total Card */}
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-700">Total del Mes</h2>
@@ -330,6 +358,10 @@ export function Dashboard() {
         isOpen={isCategoryManagerOpen}
         onClose={() => setIsCategoryManagerOpen(false)}
       />
+      </div>
+      )}
+
+      {activeTab === 'resumen' && <SummaryView />}
     </div>
   )
 }
