@@ -11,51 +11,38 @@ function App() {
   useEffect(() => {
     setIsLoading(true)
     
-    // Handle OAuth callback if present
-    const handleAuthCallback = async () => {
-      try {
-        // Check for auth code in URL (OAuth callback)
-        const hash = window.location.hash
-        const params = new URLSearchParams(window.location.search)
-        const code = params.get('code')
-        
-        console.log('Checking auth callback, code:', code ? 'present' : 'none', 'hash:', hash ? 'present' : 'none')
-        
-        // If there's a code in the URL, exchange it for a session
-        if (code) {
-          console.log('Exchanging code for session...')
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-          if (error) {
-            console.error('Code exchange error:', error)
-          } else {
-            console.log('Session exchanged successfully:', data.session?.user?.email)
-          }
-          // Clean up URL
-          window.history.replaceState({}, document.title, window.location.pathname)
-        }
-        
-        const { data: { session }, error } = await supabase.auth.getSession()
-        
-        if (error) {
-          console.error('Session error:', error)
-        }
-        
-        console.log('Current session:', session?.user?.email ?? 'none')
-        setUser(session?.user ?? null)
-      } catch (err) {
-        console.error('Auth callback error:', err)
-      } finally {
-        setIsLoading(false)
-      }
-    }
+    // Check if we have OAuth hash to parse
+    const hash = window.location.hash
+    const hasAuthHash = hash && hash.includes('access_token')
+    
+    console.log('App mounted, hash present:', !!hash, 'has auth:', hasAuthHash)
 
-    handleAuthCallback()
-
-    // Listen for auth changes
+    // Listen for auth changes FIRST (before checking session)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Auth state changed:', event, session?.user?.email)
       setUser(session?.user ?? null)
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        setIsLoading(false)
+      }
     })
+
+    // If there's no auth hash, check session immediately
+    // If there IS an auth hash, wait for onAuthStateChange to fire
+    if (!hasAuthHash) {
+      supabase.auth.getSession().then(({ data: { session }, error }) => {
+        if (error) {
+          console.error('Session error:', error)
+        }
+        console.log('Initial session check:', session?.user?.email ?? 'none')
+        setUser(session?.user ?? null)
+        setIsLoading(false)
+      })
+    } else {
+      // Wait for Supabase to parse the hash (max 3 seconds)
+      setTimeout(() => {
+        setIsLoading(false)
+      }, 3000)
+    }
 
     return () => subscription.unsubscribe()
   }, [])
