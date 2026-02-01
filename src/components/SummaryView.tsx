@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   LineChart, Line
 } from 'recharts'
-import { CreditCard, TrendingUp, Calendar, DollarSign, Trash2, Package } from 'lucide-react'
+import { CreditCard, TrendingUp, Trash2, Package } from 'lucide-react'
 import { fetchInflationData, type ProcessedInflation } from '../services/inflation'
 
 export function SummaryView() {
@@ -131,9 +131,7 @@ export function SummaryView() {
   }
 
   // Average metrics
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate()
   const currentDay = currentDate.getDate()
-  const daysRemaining = daysInMonth - currentDay
   
   const currentMonthExpenses = expenses
     .filter(e => {
@@ -143,7 +141,6 @@ export function SummaryView() {
     .reduce((sum, e) => sum + e.amount_cents, 0)
   
   const dailyAverage = currentDay > 0 ? currentMonthExpenses / currentDay : 0
-  const projectedMonthly = dailyAverage * daysInMonth
 
   // Group all active installments by group_id
   const allInstallments = expenses.filter(e => e.is_installment)
@@ -316,10 +313,88 @@ export function SummaryView() {
           </div>
         </div>
 
-        {/* Average Metrics */}
+        {/* Financial Insights */}
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">Métricas del Mes</h3>
-          <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-gray-700 mb-4">Estado Financiero</h3>
+          
+          {/* Status Indicator */}
+          <div className="mb-6">
+            {(() => {
+              const totalIncome = last6Months[5]?.income * 100 || 0
+              const totalExpenses = last6Months[5]?.expenses * 100 || 0
+              const ratio = totalIncome > 0 ? totalExpenses / totalIncome : 0
+              
+              let status: 'good' | 'warning' | 'danger' = 'good'
+              let message = ''
+              let icon = '🟢'
+              
+              if (ratio > 0.9) {
+                status = 'danger'
+                message = 'Alerta: Gastos superan el 90% de tus ingresos'
+                icon = '🔴'
+              } else if (ratio > 0.8) {
+                status = 'warning'
+                message = 'Atención: Gastos elevados'
+                icon = '🟡'
+              } else {
+                status = 'good'
+                message = 'Todo bien: Gastos bajo control'
+                icon = '🟢'
+              }
+              
+              return (
+                <div className={`p-4 rounded-xl ${
+                  status === 'good' ? 'bg-emerald-50 border border-emerald-200' :
+                  status === 'warning' ? 'bg-amber-50 border border-amber-200' :
+                  'bg-red-50 border border-red-200'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{icon}</span>
+                    <div>
+                      <p className={`font-semibold ${
+                        status === 'good' ? 'text-emerald-700' :
+                        status === 'warning' ? 'text-amber-700' :
+                        'text-red-700'
+                      }`}>
+                        {message}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        Estás usando el {(ratio * 100).toFixed(0)}% de tus ingresos
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+          
+          {/* Month-over-Month Comparison */}
+          {last6Months.length >= 2 && (
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-700">Comparación vs Mes Anterior</h4>
+              {(() => {
+                const current = last6Months[last6Months.length - 1]
+                const previous = last6Months[last6Months.length - 2]
+                const expenseChange = previous.expenses > 0 
+                  ? ((current.expenses - previous.expenses) / previous.expenses) * 100 
+                  : 0
+                
+                return (
+                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                    <span className="text-gray-600">Variación de gastos</span>
+                    <span className={`font-semibold ${
+                      expenseChange > 0 ? 'text-red-600' : 'text-emerald-600'
+                    }`}>
+                      {expenseChange > 0 ? '↑' : '↓'} {Math.abs(expenseChange).toFixed(1)}%
+                    </span>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+          
+          {/* Daily Average */}
+          <div className="mt-4 pt-4 border-t border-gray-100">
             <div className="flex items-center justify-between p-4 bg-violet-50 rounded-xl">
               <div className="flex items-center gap-3">
                 <TrendingUp className="w-5 h-5 text-violet-600" />
@@ -328,24 +403,6 @@ export function SummaryView() {
               <span className="font-bold text-violet-600">
                 {formatCurrency(dailyAverage, 'ARS')}
               </span>
-            </div>
-            
-            <div className="flex items-center justify-between p-4 bg-amber-50 rounded-xl">
-              <div className="flex items-center gap-3">
-                <Calendar className="w-5 h-5 text-amber-600" />
-                <span className="text-gray-700">Proyección mensual</span>
-              </div>
-              <span className="font-bold text-amber-600">
-                {formatCurrency(projectedMonthly, 'ARS')}
-              </span>
-            </div>
-            
-            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-xl">
-              <div className="flex items-center gap-3">
-                <DollarSign className="w-5 h-5 text-blue-600" />
-                <span className="text-gray-700">Días restantes</span>
-              </div>
-              <span className="font-bold text-blue-600">{daysRemaining} días</span>
             </div>
           </div>
         </div>
@@ -441,6 +498,55 @@ export function SummaryView() {
               />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Top 5 Expenses */}
+      <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
+        <h3 className="text-lg font-semibold text-gray-700 mb-4">Top 5 Gastos del Mes</h3>
+        <div className="space-y-3">
+          {expenses
+            .filter(e => {
+              const date = new Date(e.date + 'T12:00:00')
+              return date.getMonth() === currentMonth && 
+                     date.getFullYear() === currentYear && 
+                     e.amount_cents > 0
+            })
+            .sort((a, b) => b.amount_cents - a.amount_cents)
+            .slice(0, 5)
+            .map((expense, index) => {
+              const category = categories.find(c => c.id === expense.category_id)
+              return (
+                <div key={expense.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center text-sm font-bold">
+                      {index + 1}
+                    </span>
+                    <div>
+                      <p className="font-medium text-gray-900">{expense.description}</p>
+                      <p className="text-xs text-gray-500">{category?.name}</p>
+                    </div>
+                  </div>
+                  <span className="font-semibold text-violet-600">
+                    {showUsd 
+                      ? formatCurrency(expense.usd_amount_cents || 0, 'USD') 
+                      : formatCurrency(expense.amount_cents, 'ARS')
+                    }
+                  </span>
+                </div>
+              )
+            })}
+          
+          {expenses.filter(e => {
+            const date = new Date(e.date + 'T12:00:00')
+            return date.getMonth() === currentMonth && 
+                   date.getFullYear() === currentYear && 
+                   e.amount_cents > 0
+          }).length === 0 && (
+            <p className="text-center text-gray-500 py-4">
+              No hay gastos registrados este mes
+            </p>
+          )}
         </div>
       </div>
 
