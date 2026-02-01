@@ -6,7 +6,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Button } from './components/ui/button'
 
 function App() {
-  const { user, setUser, isLoading, setIsLoading } = useAppStore()
+  const { user, setUser, isLoading, setIsLoading, initializeCategories } = useAppStore()
 
   useEffect(() => {
     setIsLoading(true)
@@ -23,6 +23,9 @@ function App() {
       setUser(session?.user ?? null)
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         setIsLoading(false)
+        if (event === 'SIGNED_IN') {
+          initializeCategories()
+        }
       }
     })
 
