@@ -1,16 +1,20 @@
 import { useState, useEffect } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { formatCurrency } from '../lib/utils'
+import { supabase } from '../services/supabase'
+import type { Expense } from '../services/supabase'
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   LineChart, Line
 } from 'recharts'
-import { CreditCard, TrendingUp, Calendar, DollarSign } from 'lucide-react'
+import { CreditCard, TrendingUp, Calendar, DollarSign, Trash2, Package } from 'lucide-react'
 
 export function SummaryView() {
   const { expenses, categories, exchangeRate, showUsd } = useAppStore()
   const [isLoading, setIsLoading] = useState(true)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [groupToDelete, setGroupToDelete] = useState<string | null>(null)
 
   useEffect(() => {
     setIsLoading(false)
@@ -127,10 +131,62 @@ export function SummaryView() {
   const dailyAverage = currentDay > 0 ? currentMonthExpenses / currentDay : 0
   const projectedMonthly = dailyAverage * daysInMonth
 
-  // Next payment dates
-  const nextPayments = allPendingInstallments
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .slice(0, 3)
+  // Group all active installments by group_id
+  const allInstallments = expenses.filter(e => e.is_installment)
+  const groupedInstallments = new Map()
+  
+  allInstallments.forEach(e => {
+    if (!groupedInstallments.has(e.installment_group_id)) {
+      groupedInstallments.set(e.installment_group_id, [])
+    }
+    groupedInstallments.get(e.installment_group_id).push(e)
+  })
+  
+  // Create summary for each installment group
+  const activeInstallmentGroups = Array.from(groupedInstallments.entries()).map(([groupId, items]) => {
+    const sorted = items.sort((a: Expense, b: Expense) => (a.installment_number || 0) - (b.installment_number || 0))
+    const first = sorted[0]
+    const totalInstallments = first.total_installments || sorted.length
+    const paidCount = sorted.filter((e: Expense) => e.status === 'paid').length
+    const currentNumber = paidCount + 1
+    const totalAmount = sorted.reduce((sum: number, e: Expense) => sum + e.amount_cents, 0)
+    const remainingAmount = sorted
+      .filter((e: Expense) => e.status === 'pending')
+      .reduce((sum: number, e: Expense) => sum + e.amount_cents, 0)
+    
+    return {
+      groupId,
+      description: first.description.replace(/\s*\(\d+\/\d+\)$/, ''),
+      currentNumber,
+      totalInstallments,
+      paidCount,
+      remainingCount: totalInstallments - paidCount,
+      totalAmount,
+      remainingAmount,
+      categoryId: first.category_id,
+    }
+  }).filter(g => g.remainingCount > 0) // Only show active ones
+
+  const handleDeleteGroup = async () => {
+    if (!groupToDelete) return
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('No user')
+      
+      await supabase
+        .from('expenses')
+        .delete()
+        .eq('installment_group_id', groupToDelete)
+        .eq('user_id', user.id)
+      
+      // Refresh page
+      window.location.reload()
+    } catch (err) {
+      console.error('Error deleting group:', err)
+      alert('Error al eliminar el grupo de cuotas')
+    }
+  }
 
   return (
     <div className="space-y-6 pb-20">
@@ -268,34 +324,99 @@ export function SummaryView() {
         </div>
       </div>
 
-      {/* Next Payments */}
-      {nextPayments.length > 0 && (
+      {/* All Active Installments */}
+      {activeInstallmentGroups.length > 0 && (
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">Próximos Vencimientos</h3>
-          <div className="space-y-3">
-            {nextPayments.map((payment) => (
-              <div key={payment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                <div className="flex items-center gap-3">
-                  <CreditCard className="w-5 h-5 text-violet-600" />
-                  <div>
-                    <p className="font-medium text-gray-900">{payment.description}</p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(payment.date).toLocaleDateString('es-AR', { 
-                        weekday: 'long', 
-                        day: 'numeric', 
-                        month: 'long' 
-                      })}
-                    </p>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Package className="w-5 h-5 text-violet-600" />
+              <h3 className="text-lg font-semibold text-gray-700">Cuotas en Progreso</h3>
+            </div>
+            <span className="text-sm text-gray-500">{activeInstallmentGroups.length} activas</span>
+          </div>
+          
+          <div className="space-y-4">
+            {activeInstallmentGroups.map((group) => {
+              const category = categories.find(c => c.id === group.categoryId)
+              const progressPercent = (group.paidCount / group.totalInstallments) * 100
+              
+              return (
+                <div key={group.groupId} className="p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{category?.icon || '📦'}</span>
+                      <div>
+                        <p className="font-medium text-gray-900">{group.description}</p>
+                        <p className="text-sm text-violet-600 font-semibold">
+                          Cuota {group.currentNumber} / {group.totalInstallments}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setGroupToDelete(group.groupId)
+                        setDeleteModalOpen(true)
+                      }}
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Eliminar todas las cuotas"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
+                  {/* Progress bar */}
+                  <div className="mb-2">
+                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-violet-500 rounded-full transition-all"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">
+                      {group.paidCount} pagadas • {group.remainingCount} restantes
+                    </span>
+                    <span className="font-semibold text-gray-900">
+                      {showUsd 
+                        ? formatCurrency(group.remainingAmount * (exchangeRate / 100) / 100, 'USD')
+                        : formatCurrency(group.remainingAmount, 'ARS')
+                      } restantes
+                    </span>
                   </div>
                 </div>
-                <span className="font-semibold text-violet-600">
-                  {showUsd 
-                    ? formatCurrency(payment.usd_amount_cents || 0, 'USD') 
-                    : formatCurrency(payment.amount_cents, 'ARS')
-                  }
-                </span>
-              </div>
-            ))}
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Eliminar todas las cuotas</h3>
+            <p className="text-gray-600 mb-4">
+              ¿Estás seguro de que quieres eliminar TODAS las cuotas de este pago? 
+              Se eliminarán las cuotas pagadas y pendientes de todos los meses.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteModalOpen(false)}
+                className="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteGroup}
+                className="flex-1 py-2 px-4 bg-red-500 hover:bg-red-600 text-white rounded-lg"
+              >
+                <Trash2 className="w-4 h-4 inline mr-2" />
+                Eliminar todo
+              </button>
+            </div>
           </div>
         </div>
       )}

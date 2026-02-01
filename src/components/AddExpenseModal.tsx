@@ -20,6 +20,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
   const [paymentMethod, setPaymentMethod] = useState<'debit' | 'credit'>('debit')
   const [installments, setInstallments] = useState(1)
   const [isRecurring, setIsRecurring] = useState(false)
+  const [billingDay, setBillingDay] = useState(10)
   const [isLoading, setIsLoading] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
 
@@ -47,8 +48,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
 
         const expensesToInsert = []
         for (let i = 0; i < installments; i++) {
-          const installmentDate = new Date(today)
-          installmentDate.setMonth(today.getMonth() + i)
+          const installmentDate = new Date(today.getFullYear(), today.getMonth() + i, billingDay)
 
           const currentInstallmentAmount = i === 0 ? installmentAmount + remainder : installmentAmount
           const currentUsdAmount = Math.round(currentInstallmentAmount / exchangeRate)
@@ -100,6 +100,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
       setPaymentMethod('debit')
       setInstallments(1)
       setIsRecurring(false)
+      setBillingDay(10)
       
       onSuccess()
       onClose()
@@ -263,6 +264,29 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                   Se dividirá en {installments} pagos de ${(parseFloat(amount || '0') / installments).toFixed(2)} ARS cada uno
                 </p>
               )}
+
+              {/* Billing Day Selector */}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Día de facturación (cuotas)
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="1"
+                    max="28"
+                    value={billingDay}
+                    onChange={(e) => setBillingDay(parseInt(e.target.value))}
+                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-violet-600"
+                  />
+                  <span className="text-lg font-semibold text-violet-600 w-12 text-center">
+                    {billingDay}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Las cuotas se vencerán el día {billingDay} de cada mes
+                </p>
+              </div>
             </div>
           )}
 

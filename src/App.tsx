@@ -70,7 +70,7 @@ function App() {
     <div className="min-h-screen bg-gradient-to-br from-violet-50 to-purple-50 pb-20">
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-violet-100 sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-violet-900">Gastitos</h1>
             <p className="text-xs text-violet-600">Tu tracker de gastos</p>
@@ -85,7 +85,7 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-md mx-auto px-4 py-6">
+      <main className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-6">
         <Dashboard />
       </main>
     </div>
