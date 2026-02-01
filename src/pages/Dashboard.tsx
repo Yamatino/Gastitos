@@ -97,14 +97,14 @@ export function Dashboard() {
     const uniqueRecurring = new Map()
     recurringExpenses.forEach(expense => {
       const key = `${expense.description}-${expense.category_id}`
-      if (!uniqueRecurring.has(key) || new Date(expense.date) > new Date(uniqueRecurring.get(key).date)) {
+      if (!uniqueRecurring.has(key) || new Date(expense.date + 'T12:00:00') > new Date(uniqueRecurring.get(key).date + 'T12:00:00')) {
         uniqueRecurring.set(key, expense)
       }
     })
     
     // Check if any need to be created for current month
     for (const expense of uniqueRecurring.values()) {
-      const expenseDate = new Date(expense.date)
+      const expenseDate = new Date(expense.date + 'T12:00:00')
       const isCurrentMonth = expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear
       
       if (!isCurrentMonth) {
@@ -174,7 +174,7 @@ export function Dashboard() {
 
   // Calculate totals
   const monthlyTransactions = expenses.filter(expense => {
-    const expenseDate = new Date(expense.date)
+    const expenseDate = new Date(expense.date + 'T12:00:00')
     return expenseDate.getMonth() === selectedMonth && expenseDate.getFullYear() === selectedYear
   })
 
@@ -194,19 +194,19 @@ export function Dashboard() {
   const pendingCuotas = expenses.filter(e => 
     e.is_installment && 
     e.status === 'pending' &&
-    new Date(e.date) <= new Date()
+    new Date(e.date + 'T12:00:00') <= new Date()
   )
 
   // Filter expenses based on search and selected month/year
   const filteredExpenses = searchQuery
     ? expenses.filter(e => 
         e.description.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        new Date(e.date).getMonth() === selectedMonth &&
-        new Date(e.date).getFullYear() === selectedYear
+        new Date(e.date + 'T12:00:00').getMonth() === selectedMonth &&
+        new Date(e.date + 'T12:00:00').getFullYear() === selectedYear
       )
     : expenses.filter(e => 
-        new Date(e.date).getMonth() === selectedMonth &&
-        new Date(e.date).getFullYear() === selectedYear
+        new Date(e.date + 'T12:00:00').getMonth() === selectedMonth &&
+        new Date(e.date + 'T12:00:00').getFullYear() === selectedYear
       )
 
   // Group installments by installment_group_id for display
@@ -237,7 +237,7 @@ export function Dashboard() {
         const totalUsd = group._installments.reduce((sum: number, inst: Expense) => sum + (inst.usd_amount_cents || 0), 0)
         const nextPending = group._installments
           .filter((inst: Expense) => inst.status === 'pending')
-          .sort((a: Expense, b: Expense) => new Date(a.date).getTime() - new Date(b.date).getTime())[0]
+          .sort((a: Expense, b: Expense) => new Date(a.date + 'T12:00:00').getTime() - new Date(b.date + 'T12:00:00').getTime())[0]
         
         return {
           ...group,
@@ -404,7 +404,7 @@ export function Dashboard() {
               
               const spent = expenses
                 .filter(e => {
-                  const date = new Date(e.date)
+                  const date = new Date(e.date + 'T12:00:00')
                   return e.category_id === categoryId && 
                          date.getMonth() === selectedMonth && 
                          date.getFullYear() === selectedYear && 
@@ -575,7 +575,7 @@ export function Dashboard() {
                       {(() => {
                         const category = categories.find(c => c.id === expense.category_id)
                         return category?.name || 'Sin categoría'
-                      })()} • {new Date(expense.date).toLocaleDateString('es-AR')}
+                      })()} • {new Date(expense.date + 'T12:00:00').toLocaleDateString('es-AR')}
                     </p>
                   </div>
                 </div>

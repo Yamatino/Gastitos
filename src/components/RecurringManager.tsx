@@ -24,7 +24,7 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
     .filter(e => e.is_recurring)
     .forEach(e => {
       const key = `${e.description}-${e.category_id}`
-      if (!recurringMap.has(key) || new Date(e.date) > new Date(recurringMap.get(key).date)) {
+      if (!recurringMap.has(key) || new Date(e.date + 'T12:00:00') > new Date(recurringMap.get(key).date + 'T12:00:00')) {
         recurringMap.set(key, e)
       }
     })
@@ -196,7 +196,7 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
                   )}
                   
                   <div className="mt-2 text-xs text-gray-400">
-                    Último: {new Date(expense.date).toLocaleDateString('es-AR')}
+                    Último: {new Date(expense.date + 'T12:00:00').toLocaleDateString('es-AR')}
                   </div>
                 </div>
               )

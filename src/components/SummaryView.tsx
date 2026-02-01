@@ -43,7 +43,7 @@ export function SummaryView() {
   // This month vs next months debt
   const thisMonthDebt = allPendingInstallments
     .filter(e => {
-      const date = new Date(e.date)
+      const date = new Date(e.date + 'T12:00:00')
       return date.getMonth() === currentMonth && date.getFullYear() === currentYear
     })
     .reduce((sum, e) => sum + e.amount_cents, 0)
@@ -59,12 +59,12 @@ export function SummaryView() {
     const year = d.getFullYear()
     
     const monthExpenses = expenses.filter(e => {
-      const date = new Date(e.date)
+      const date = new Date(e.date + 'T12:00:00')
       return date.getMonth() === month && date.getFullYear() === year && e.amount_cents > 0
     })
     
     const monthIncome = expenses.filter(e => {
-      const date = new Date(e.date)
+      const date = new Date(e.date + 'T12:00:00')
       return date.getMonth() === month && date.getFullYear() === year && e.amount_cents < 0
     })
     
@@ -123,7 +123,7 @@ export function SummaryView() {
   
   const currentMonthExpenses = expenses
     .filter(e => {
-      const date = new Date(e.date)
+      const date = new Date(e.date + 'T12:00:00')
       return date.getMonth() === currentMonth && date.getFullYear() === currentYear && e.amount_cents > 0
     })
     .reduce((sum, e) => sum + e.amount_cents, 0)

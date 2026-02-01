@@ -25,7 +25,7 @@ export function BudgetManager({ isOpen, onClose }: BudgetManagerProps) {
   const categorySpending = new Map<string, number>()
   expenses
     .filter(e => {
-      const date = new Date(e.date)
+      const date = new Date(e.date + 'T12:00:00')
       return date.getMonth() === currentMonth && 
              date.getFullYear() === currentYear && 
              e.amount_cents > 0
