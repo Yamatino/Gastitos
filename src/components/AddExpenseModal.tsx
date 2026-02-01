@@ -184,7 +184,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
               
               {showCategoryDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
-                  {categories.map((category) => (
+                  {categories.filter(c => c.type === 'expense').map((category) => (
                     <button
                       key={category.id}
                       type="button"

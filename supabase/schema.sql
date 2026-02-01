@@ -54,6 +54,9 @@ CREATE POLICY IF NOT EXISTS "Users can only see their own expenses"
   ON expenses FOR ALL
   USING (auth.uid() = user_id);
 
+-- Agregar columna type a categorías si no existe
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'expense' CHECK (type IN ('income', 'expense'));
+
 -- Índices
 CREATE INDEX IF NOT EXISTS idx_expenses_user_id ON expenses(user_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);

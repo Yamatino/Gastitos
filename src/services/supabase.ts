@@ -34,5 +34,6 @@ export type Category = {
   icon: string
   color: string
   is_default: boolean
+  type: 'income' | 'expense'
   created_at: string
 }

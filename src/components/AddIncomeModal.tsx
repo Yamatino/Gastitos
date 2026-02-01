@@ -20,12 +20,8 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
   const [isLoading, setIsLoading] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
 
-  // Filter only income-related categories (like Salario)
-  const incomeCategories = categories.filter(c => 
-    c.name.toLowerCase().includes('salario') || 
-    c.name.toLowerCase().includes('sueldo') ||
-    c.name.toLowerCase().includes('ingreso')
-  )
+  // Filter only income categories
+  const incomeCategories = categories.filter(c => c.type === 'income')
 
   if (!isOpen) return null
 
@@ -141,7 +137,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
               
               {showCategoryDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
-                  {(incomeCategories.length > 0 ? incomeCategories : categories).map((category) => (
+                  {incomeCategories.map((category) => (
                     <button
                       key={category.id}
                       type="button"
@@ -158,11 +154,6 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
                 </div>
               )}
             </div>
-            {incomeCategories.length === 0 && (
-              <p className="text-xs text-gray-500 mt-1">
-                Tip: Las categorías "Salario", "Sueldo" o "Ingreso" aparecerán primero
-              </p>
-            )}
           </div>
 
           <div className="pt-4">

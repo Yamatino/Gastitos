@@ -43,16 +43,22 @@ export const useAppStore = create<AppState>()(
       categories: [],
       setCategories: (categories) => set({ categories }),
       initializeCategories: async () => {
-        const { data: existing } = await supabase.from('categories').select('*').limit(1)
-        if (existing && existing.length > 0) return
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        
+        const { data: existing } = await supabase.from('categories').select('*').eq('user_id', user.id).limit(1)
+        if (existing && existing.length > 0) {
+          set({ categories: existing })
+          return
+        }
         
         const defaultCategories = [
-          { name: 'Salario', icon: '💰', color: '#10B981', is_default: true },
-          { name: 'Casa', icon: '🏠', color: '#8B5CF6', is_default: true },
-          { name: 'Supermercado', icon: '🛒', color: '#F59E0B', is_default: true },
-          { name: 'Salida', icon: '🍻', color: '#EC4899', is_default: true },
-          { name: 'Transporte', icon: '🚗', color: '#3B82F6', is_default: true },
-          { name: 'Servicios', icon: '💡', color: '#6B7280', is_default: true },
+          { name: 'Salario', icon: '💰', color: '#10B981', is_default: true, user_id: user.id, type: 'income' },
+          { name: 'Otros', icon: '📥', color: '#6B7280', is_default: true, user_id: user.id, type: 'income' },
+          { name: 'Supermercado', icon: '🛒', color: '#F59E0B', is_default: true, user_id: user.id, type: 'expense' },
+          { name: 'Salida', icon: '🍻', color: '#EC4899', is_default: true, user_id: user.id, type: 'expense' },
+          { name: 'Transporte', icon: '🚗', color: '#3B82F6', is_default: true, user_id: user.id, type: 'expense' },
+          { name: 'Servicios', icon: '💡', color: '#6B7280', is_default: true, user_id: user.id, type: 'expense' },
         ]
         
         const { data, error } = await supabase.from('categories').insert(defaultCategories).select()
@@ -63,7 +69,11 @@ export const useAppStore = create<AppState>()(
         }
       },
       addCategory: async (category) => {
-        const { data, error } = await supabase.from('categories').insert(category).select()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('No user')
+        
+        const categoryWithUser = { ...category, user_id: user.id, type: 'expense' }
+        const { data, error } = await supabase.from('categories').insert(categoryWithUser).select()
         if (error) {
           console.error('Error adding category:', error)
           throw error
