@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/appStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings, Download, Search, Target, Repeat } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings, Download, Search, Target, Repeat, Trash2 } from 'lucide-react'
 import { AddExpenseModal } from '../components/AddExpenseModal'
 import { CategoryManager } from '../components/CategoryManager'
 import { AddIncomeModal } from '../components/AddIncomeModal'
@@ -21,6 +21,12 @@ export function Dashboard() {
   const [activeTab, setActiveTab] = useState<'gastos' | 'resumen'>('gastos')
   const [isBudgetManagerOpen, setIsBudgetManagerOpen] = useState(false)
   const [isRecurringManagerOpen, setIsRecurringManagerOpen] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [showAllTransactions, setShowAllTransactions] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [transactionToDelete, setTransactionToDelete] = useState<Expense | null>(null)
+  const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     fetchExpenses()
@@ -49,6 +55,27 @@ export function Dashboard() {
 
     if (!error && data) {
       setCategories(data)
+    }
+  }
+
+  const handleDeleteTransaction = async () => {
+    if (!transactionToDelete) return
+    
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', transactionToDelete.id)
+      
+      if (error) throw error
+      
+      // Refresh expenses
+      fetchExpenses()
+      setDeleteModalOpen(false)
+      setTransactionToDelete(null)
+    } catch (err) {
+      console.error('Error deleting transaction:', err)
+      alert('Error al eliminar la transacción')
     }
   }
 
@@ -148,12 +175,9 @@ export function Dashboard() {
   }
 
   // Calculate totals
-  const currentMonth = new Date().getMonth()
-  const currentYear = new Date().getFullYear()
-  
   const monthlyTransactions = expenses.filter(expense => {
     const expenseDate = new Date(expense.date)
-    return expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear
+    return expenseDate.getMonth() === selectedMonth && expenseDate.getFullYear() === selectedYear
   })
 
   // Separate income (negative amounts) from expenses (positive amounts)
@@ -175,10 +199,17 @@ export function Dashboard() {
     new Date(e.date) <= new Date()
   )
 
-  // Filter expenses based on search
+  // Filter expenses based on search and selected month/year
   const filteredExpenses = searchQuery
-    ? expenses.filter(e => e.description.toLowerCase().includes(searchQuery.toLowerCase()))
-    : expenses
+    ? expenses.filter(e => 
+        e.description.toLowerCase().includes(searchQuery.toLowerCase()) &&
+        new Date(e.date).getMonth() === selectedMonth &&
+        new Date(e.date).getFullYear() === selectedYear
+      )
+    : expenses.filter(e => 
+        new Date(e.date).getMonth() === selectedMonth &&
+        new Date(e.date).getFullYear() === selectedYear
+      )
 
   // Group installments by installment_group_id for display
   const getGroupedTransactions = () => {
@@ -234,7 +265,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl mx-auto px-4">
       {/* Tab Navigation */}
       <div className="flex bg-white rounded-xl p-1 shadow-sm border border-violet-100">
         <button
@@ -385,8 +416,8 @@ export function Dashboard() {
                 .filter(e => {
                   const date = new Date(e.date)
                   return e.category_id === categoryId && 
-                         date.getMonth() === currentMonth && 
-                         date.getFullYear() === currentYear && 
+                         date.getMonth() === selectedMonth && 
+                         date.getFullYear() === selectedYear && 
                          e.amount_cents > 0
                 })
                 .reduce((sum, e) => sum + e.amount_cents, 0)
@@ -442,6 +473,37 @@ export function Dashboard() {
         </Button>
       </div>
 
+      {/* Month Selector */}
+      <div className="flex gap-3 items-center">
+        <select
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+          className="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+        >
+          {Array.from({ length: 12 }, (_, i) => (
+            <option key={i} value={i}>
+              {new Date(2024, i).toLocaleDateString('es-AR', { month: 'long' })}
+            </option>
+          ))}
+        </select>
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+          className="px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+        >
+          {[2024, 2025, 2026].map(year => (
+            <option key={year} value={year}>{year}</option>
+          ))}
+        </select>
+        <Button
+          variant="outline"
+          onClick={() => setShowAllTransactions(!showAllTransactions)}
+          className="whitespace-nowrap"
+        >
+          {showAllTransactions ? 'Ver menos' : 'Ver todos'}
+        </Button>
+      </div>
+
       {/* Recent Expenses */}
       <div className="bg-white rounded-2xl shadow-lg border border-violet-100 overflow-hidden">
         <div className="p-4 border-b border-violet-100">
@@ -456,8 +518,48 @@ export function Dashboard() {
           </div>
         ) : (
           <div className="divide-y divide-violet-50">
-             {groupedExpenses.slice(0, 8).map((expense) => (
-              <div key={expense.id} className="p-4 flex items-center justify-between hover:bg-violet-50/50">
+             {(showAllTransactions ? groupedExpenses : groupedExpenses.slice(0, 8)).map((expense) => (
+              <div 
+                key={expense.id} 
+                className="p-4 flex items-center justify-between hover:bg-violet-50/50 cursor-pointer relative group"
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setTransactionToDelete(expense)
+                  setDeleteModalOpen(true)
+                }}
+                onTouchStart={() => {
+                  const timer = setTimeout(() => {
+                    setTransactionToDelete(expense)
+                    setDeleteModalOpen(true)
+                  }, 800)
+                  setLongPressTimer(timer)
+                }}
+                onTouchEnd={() => {
+                  if (longPressTimer) {
+                    clearTimeout(longPressTimer)
+                    setLongPressTimer(null)
+                  }
+                }}
+                onMouseDown={() => {
+                  const timer = setTimeout(() => {
+                    setTransactionToDelete(expense)
+                    setDeleteModalOpen(true)
+                  }, 800)
+                  setLongPressTimer(timer)
+                }}
+                onMouseUp={() => {
+                  if (longPressTimer) {
+                    clearTimeout(longPressTimer)
+                    setLongPressTimer(null)
+                  }
+                }}
+                onMouseLeave={() => {
+                  if (longPressTimer) {
+                    clearTimeout(longPressTimer)
+                    setLongPressTimer(null)
+                  }
+                }}
+              >
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                     expense.payment_method === 'credit' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
@@ -544,6 +646,35 @@ export function Dashboard() {
         isOpen={isRecurringManagerOpen}
         onClose={() => setIsRecurringManagerOpen(false)}
       />
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && transactionToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Eliminar transacción</h3>
+            <p className="text-gray-600 mb-4">
+              ¿Estás seguro de que quieres eliminar "{transactionToDelete.description}" por {formatCurrency(Math.abs(transactionToDelete.amount_cents), 'ARS')}?
+            </p>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteModalOpen(false)}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleDeleteTransaction}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Eliminar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
       )}
 
