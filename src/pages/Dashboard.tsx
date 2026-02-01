@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/appStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings, Download, Search } from 'lucide-react'
 import { AddExpenseModal } from '../components/AddExpenseModal'
 import { CategoryManager } from '../components/CategoryManager'
 import { AddIncomeModal } from '../components/AddIncomeModal'
@@ -14,6 +14,7 @@ export function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false)
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'gastos' | 'resumen'>('gastos')
 
@@ -64,6 +65,32 @@ export function Dashboard() {
     }
   }
 
+  const exportToCSV = () => {
+    const headers = ['Fecha', 'Descripción', 'Categoría', 'Monto (ARS)', 'Monto (USD)', 'Método de Pago', 'Tipo']
+    const rows = expenses.map(e => {
+      const category = categories.find(c => c.id === e.category_id)?.name || 'Sin categoría'
+      return [
+        e.date,
+        e.description,
+        category,
+        (e.amount_cents / 100).toFixed(2),
+        ((e.usd_amount_cents || 0) / 100).toFixed(2),
+        e.payment_method === 'credit' ? 'Crédito' : 'Débito',
+        e.amount_cents < 0 ? 'Ingreso' : 'Gasto'
+      ]
+    })
+    
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `gastitos_${new Date().toISOString().split('T')[0]}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   // Calculate totals
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
@@ -92,11 +119,16 @@ export function Dashboard() {
     new Date(e.date) <= new Date()
   )
 
+  // Filter expenses based on search
+  const filteredExpenses = searchQuery
+    ? expenses.filter(e => e.description.toLowerCase().includes(searchQuery.toLowerCase()))
+    : expenses
+
   // Group installments by installment_group_id for display
   const getGroupedTransactions = () => {
     const grouped = new Map()
     
-    expenses.forEach(expense => {
+    filteredExpenses.forEach(expense => {
       if (expense.is_installment && expense.installment_group_id) {
         // Group by installment_group_id
         if (!grouped.has(expense.installment_group_id)) {
@@ -265,6 +297,28 @@ export function Dashboard() {
         >
           <Settings className="w-4 h-4 mr-2" />
           Categorías
+        </Button>
+      </div>
+
+      {/* Search and Export Bar */}
+      <div className="flex gap-3">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar gastos..."
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+          />
+        </div>
+        <Button
+          onClick={exportToCSV}
+          variant="outline"
+          className="px-4"
+        >
+          <Download className="w-4 h-4 mr-2" />
+          Exportar
         </Button>
       </div>
 
