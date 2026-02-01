@@ -19,6 +19,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
   const [categoryId, setCategoryId] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'debit' | 'credit'>('debit')
   const [installments, setInstallments] = useState(1)
+  const [isRecurring, setIsRecurring] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
 
@@ -85,6 +86,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
           category_id: categoryId,
           payment_method: paymentMethod,
           is_installment: false,
+          is_recurring: isRecurring,
           date: new Date().toISOString().split('T')[0],
           status: 'paid',
         })
@@ -97,6 +99,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
       setCategoryId('')
       setPaymentMethod('debit')
       setInstallments(1)
+      setIsRecurring(false)
       
       onSuccess()
       onClose()
@@ -262,6 +265,20 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
               )}
             </div>
           )}
+
+          {/* Recurring Expense */}
+          <div className="flex items-center gap-3 p-3 bg-violet-50 rounded-xl">
+            <input
+              type="checkbox"
+              id="isRecurring"
+              checked={isRecurring}
+              onChange={(e) => setIsRecurring(e.target.checked)}
+              className="w-5 h-5 text-violet-600 rounded focus:ring-violet-500"
+            />
+            <label htmlFor="isRecurring" className="text-sm font-medium text-gray-700 cursor-pointer">
+              Gasto recurrente mensual
+            </label>
+          </div>
 
           {/* Submit Button */}
           <div className="pt-4">

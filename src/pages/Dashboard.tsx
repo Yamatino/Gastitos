@@ -3,12 +3,13 @@ import { useAppStore } from '../stores/appStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings, Download, Search, Target } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Settings, Download, Search, Target, Repeat } from 'lucide-react'
 import { AddExpenseModal } from '../components/AddExpenseModal'
 import { CategoryManager } from '../components/CategoryManager'
 import { AddIncomeModal } from '../components/AddIncomeModal'
 import { SummaryView } from '../components/SummaryView'
 import { BudgetManager } from '../components/BudgetManager'
+import { RecurringManager } from '../components/RecurringManager'
 
 export function Dashboard() {
   const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate, budgets } = useAppStore()
@@ -19,10 +20,11 @@ export function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'gastos' | 'resumen'>('gastos')
   const [isBudgetManagerOpen, setIsBudgetManagerOpen] = useState(false)
+  const [isRecurringManagerOpen, setIsRecurringManagerOpen] = useState(false)
 
   useEffect(() => {
     fetchExpenses()
-    fetchCategories()
+    fetchCategories().then(() => checkAndCreateRecurring())
     fetchExchangeRate()
   }, [])
 
@@ -47,6 +49,58 @@ export function Dashboard() {
 
     if (!error && data) {
       setCategories(data)
+    }
+  }
+
+  const checkAndCreateRecurring = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    
+    // Find recurring expenses from last month that don't have a current month entry
+    const currentMonth = new Date().getMonth()
+    const currentYear = new Date().getFullYear()
+    
+    const { data: recurringExpenses } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('is_recurring', true)
+      .eq('user_id', user.id)
+    
+    if (!recurringExpenses) return
+    
+    // Group by description to find unique recurring expenses
+    const uniqueRecurring = new Map()
+    recurringExpenses.forEach(expense => {
+      const key = `${expense.description}-${expense.category_id}`
+      if (!uniqueRecurring.has(key) || new Date(expense.date) > new Date(uniqueRecurring.get(key).date)) {
+        uniqueRecurring.set(key, expense)
+      }
+    })
+    
+    // Check if any need to be created for current month
+    for (const expense of uniqueRecurring.values()) {
+      const expenseDate = new Date(expense.date)
+      const isCurrentMonth = expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear
+      
+      if (!isCurrentMonth) {
+        // Create new recurring expense for current month
+        const newDate = new Date(currentYear, currentMonth, Math.min(expenseDate.getDate(), 28))
+        
+        await supabase.from('expenses').insert({
+          user_id: user.id,
+          description: expense.description,
+          amount_cents: expense.amount_cents,
+          currency: expense.currency,
+          exchange_rate: expense.exchange_rate,
+          usd_amount_cents: expense.usd_amount_cents,
+          category_id: expense.category_id,
+          payment_method: expense.payment_method,
+          is_installment: false,
+          is_recurring: true,
+          date: newDate.toISOString().split('T')[0],
+          status: 'paid',
+        })
+      }
     }
   }
 
@@ -283,7 +337,7 @@ export function Dashboard() {
       </div>
 
       {/* Action Buttons */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Button
           onClick={() => setIsIncomeModalOpen(true)}
           variant="outline"
@@ -307,6 +361,14 @@ export function Dashboard() {
         >
           <Target className="w-4 h-4 mr-2" />
           Presupuestos
+        </Button>
+        <Button
+          onClick={() => setIsRecurringManagerOpen(true)}
+          variant="outline"
+          className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 py-3"
+        >
+          <Repeat className="w-4 h-4 mr-2" />
+          Recurrentes
         </Button>
       </div>
 
@@ -475,6 +537,12 @@ export function Dashboard() {
       <BudgetManager
         isOpen={isBudgetManagerOpen}
         onClose={() => setIsBudgetManagerOpen(false)}
+      />
+
+      {/* Recurring Manager */}
+      <RecurringManager
+        isOpen={isRecurringManagerOpen}
+        onClose={() => setIsRecurringManagerOpen(false)}
       />
       </div>
       )}
