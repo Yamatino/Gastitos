@@ -5,6 +5,22 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, CreditCard, Wallet, ChevronDown } from 'lucide-react'
 
+// Helper function to format number with dots as thousand separators
+const formatNumberWithDots = (value: string): string => {
+  // Remove all non-digit and non-dot characters
+  const cleanValue = value.replace(/[^\d.]/g, '')
+  // Split by decimal point
+  const parts = cleanValue.split('.')
+  // Format integer part with dots
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return parts.join('.')
+}
+
+// Helper to get raw numeric value for calculations
+const getRawNumber = (formattedValue: string): number => {
+  return parseFloat(formattedValue.replace(/\./g, '').replace(',', '.')) || 0
+}
+
 interface AddExpenseModalProps {
   isOpen: boolean
   onClose: () => void
@@ -40,7 +56,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
     setIsLoading(true)
 
     try {
-      const amountCents = Math.round(parseFloat(amount) * 100)
+      const amountCents = Math.round(getRawNumber(amount) * 100)
       const usdAmountCents = Math.round(amountCents / exchangeRate)
 
       const { data: { user } } = await supabase.auth.getUser()
@@ -163,12 +179,15 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
               <Input
-                type="number"
-                step="0.01"
+                type="text"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className="pl-8 text-lg"
+                onChange={(e) => {
+                  const rawValue = e.target.value.replace(/[^\d]/g, '')
+                  const formattedValue = formatNumberWithDots(rawValue)
+                  setAmount(formattedValue)
+                }}
+                placeholder="0"
+                className="pl-8 text-lg font-mono"
                 required
               />
             </div>
@@ -294,7 +313,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
               </div>
               {installments > 1 && (
                 <p className="text-xs text-gray-500 mt-1">
-                  Se dividirá en {installments} pagos de ${(parseFloat(amount || '0') / installments).toFixed(2)} ARS cada uno
+                  Se dividirá en {installments} pagos de ${(getRawNumber(amount || '0') / installments).toFixed(2)} ARS cada uno
                 </p>
               )}
 

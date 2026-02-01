@@ -5,6 +5,18 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, TrendingUp, ChevronDown } from 'lucide-react'
 
+// Helper function to format number with dots as thousand separators
+const formatNumberWithDots = (value: string): string => {
+  const cleanValue = value.replace(/[^\d.]/g, '')
+  const parts = cleanValue.split('.')
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return parts.join('.')
+}
+
+const getRawNumber = (formattedValue: string): number => {
+  return parseFloat(formattedValue.replace(/\./g, '').replace(',', '.')) || 0
+}
+
 interface AddIncomeModalProps {
   isOpen: boolean
   onClose: () => void
@@ -39,7 +51,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
     setIsLoading(true)
 
     try {
-      const amountCents = Math.round(parseFloat(amount) * 100)
+      const amountCents = Math.round(getRawNumber(amount) * 100)
       const usdAmountCents = Math.round(amountCents / exchangeRate)
 
       const { data: { user } } = await supabase.auth.getUser()
@@ -105,12 +117,15 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
               <Input
-                type="number"
-                step="0.01"
+                type="text"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className="pl-8 text-lg"
+                onChange={(e) => {
+                  const rawValue = e.target.value.replace(/[^\d]/g, '')
+                  const formattedValue = formatNumberWithDots(rawValue)
+                  setAmount(formattedValue)
+                }}
+                placeholder="0"
+                className="pl-8 text-lg font-mono"
                 required
               />
             </div>
