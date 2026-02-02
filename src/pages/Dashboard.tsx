@@ -180,17 +180,21 @@ export function Dashboard() {
   })
 
   // Separate income (negative amounts) from expenses (positive amounts)
-  const monthlyIncome = monthlyTransactions.filter(t => t.amount_cents < 0)
-  const monthlyExpensesList = monthlyTransactions.filter(t => t.amount_cents > 0)
+  // Exclude savings from both income and expenses - they only count in savings section
+  const monthlyIncome = monthlyTransactions.filter(t => {
+    const category = categories.find(c => c.id === t.category_id)
+    return t.amount_cents < 0 && category?.type !== 'savings'
+  })
+  const monthlyExpensesList = monthlyTransactions.filter(t => {
+    const category = categories.find(c => c.id === t.category_id)
+    return t.amount_cents > 0 && category?.type !== 'savings'
+  })
 
   const totalIncomeArs = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
   const totalIncomeUsd = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.usd_amount_cents || 0), 0)
   
   const totalExpensesArs = monthlyExpensesList.reduce((sum, t) => sum + t.amount_cents, 0)
   const totalExpensesUsd = monthlyExpensesList.reduce((sum, t) => sum + (t.usd_amount_cents || 0), 0)
-
-  const balanceArs = totalIncomeArs - totalExpensesArs
-  const balanceUsd = totalIncomeUsd - totalExpensesUsd
   
   // Calculate savings (Ahorro category)
   const monthlySavings = monthlyTransactions.filter(t => {
@@ -199,6 +203,10 @@ export function Dashboard() {
   })
   const totalSavingsArs = monthlySavings.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
   const totalSavingsUsd = monthlySavings.reduce((sum, t) => sum + Math.abs(t.usd_amount_cents || 0), 0)
+  
+  // Calculate balance (income - expenses - savings)
+  const balanceArs = totalIncomeArs - totalExpensesArs - totalSavingsArs
+  const balanceUsd = totalIncomeUsd - totalExpensesUsd - totalSavingsUsd
   
   // Convert savings goal to ARS using exchange rate at month start
   const monthStartRate = exchangeRate || 1000

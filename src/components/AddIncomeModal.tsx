@@ -58,19 +58,19 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user')
 
-      // Store income as negative expense (or we could create a separate incomes table)
-      // For now, using negative amount to distinguish income from expenses
       // Check if selected category is a savings category
       const selectedCat = categories.find(c => c.id === categoryId)
       const isSavings = selectedCat?.type === 'savings'
       
+      // Store as positive amount for savings (so it counts as expense but excluded from expenses total)
+      // Store as negative for regular income
       const { error } = await supabase.from('expenses').insert({
         user_id: user.id,
         description: isSavings ? `[Ahorro] ${description}` : description,
-        amount_cents: -amountCents, // Negative for income
+        amount_cents: isSavings ? amountCents : -amountCents,
         currency: 'ARS',
         exchange_rate: exchangeRate,
-        usd_amount_cents: -usdAmountCents, // Negative for income
+        usd_amount_cents: isSavings ? usdAmountCents : -usdAmountCents,
         category_id: categoryId,
         payment_method: 'debit',
         is_installment: false,
