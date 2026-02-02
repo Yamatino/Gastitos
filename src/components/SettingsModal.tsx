@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { supabase } from '../services/supabase'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, Settings, DollarSign, Bell, Target, CreditCard, Plus, Trash2, Sun, Moon, Zap, ZapOff } from 'lucide-react'
@@ -375,6 +376,55 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   </div>
                 </div>
               )}
+
+              {/* Restore Default Categories Button */}
+              <button
+                onClick={async () => {
+                  const { data: { user } } = await supabase.auth.getUser()
+                  if (!user) return
+                  
+                  const { data: existingCategories } = await supabase
+                    .from('categories')
+                    .select('*')
+                    .eq('user_id', user.id)
+                  
+                  const existingNames = new Set(existingCategories?.map(c => c.name.toLowerCase()) || [])
+                  
+                  const defaultCategories = [
+                    { name: 'Salario', icon: '💰', color: '#10B981', is_default: true, user_id: user.id, type: 'income' },
+                    { name: 'Otros', icon: '📥', color: '#6B7280', is_default: true, user_id: user.id, type: 'income' },
+                    { name: 'Ahorro', icon: '💎', color: '#3B82F6', is_default: true, user_id: user.id, type: 'savings' },
+                    { name: 'Supermercado', icon: '🛒', color: '#F59E0B', is_default: true, user_id: user.id, type: 'expense' },
+                    { name: 'Salida', icon: '🍻', color: '#EC4899', is_default: true, user_id: user.id, type: 'expense' },
+                    { name: 'Transporte', icon: '🚗', color: '#3B82F6', is_default: true, user_id: user.id, type: 'expense' },
+                    { name: 'Servicios', icon: '💡', color: '#6B7280', is_default: true, user_id: user.id, type: 'expense' },
+                  ]
+                  
+                  const missingDefaults = defaultCategories.filter(
+                    cat => !existingNames.has(cat.name.toLowerCase())
+                  )
+                  
+                  if (missingDefaults.length > 0) {
+                    const { error } = await supabase
+                      .from('categories')
+                      .insert(missingDefaults)
+                    
+                    if (error) {
+                      alert('Error al restaurar categorías')
+                    } else {
+                      alert(`Se agregaron ${missingDefaults.length} categorías: ${missingDefaults.map(c => c.name).join(', ')}`)
+                      // Refresh categories
+                      window.location.reload()
+                    }
+                  } else {
+                    alert('Todas las categorías por defecto ya existen')
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-primary/30 rounded-xl text-primary hover:bg-primary/10 transition-colors mb-4"
+              >
+                <Plus className="w-5 h-5" />
+                Restaurar categorías por defecto
+              </button>
 
               {/* Categories List */}
               <div className="space-y-2">
