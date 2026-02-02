@@ -60,9 +60,13 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
 
       // Store income as negative expense (or we could create a separate incomes table)
       // For now, using negative amount to distinguish income from expenses
+      // Check if selected category is a savings category
+      const selectedCat = categories.find(c => c.id === categoryId)
+      const isSavings = selectedCat?.type === 'savings'
+      
       const { error } = await supabase.from('expenses').insert({
         user_id: user.id,
-        description,
+        description: isSavings ? `[Ahorro] ${description}` : description,
         amount_cents: -amountCents, // Negative for income
         currency: 'ARS',
         exchange_rate: exchangeRate,
@@ -72,6 +76,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
         is_installment: false,
         date: selectedDate,
         status: 'paid',
+        is_recurring: false,
       })
       if (error) throw error
 
@@ -106,7 +111,9 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
             <div className="p-1.5 bg-success/20 rounded-lg">
               <TrendingUp className="w-5 h-5 text-success" />
             </div>
-            <h2 className="text-xl font-bold text-foreground">Registrar Ingreso</h2>
+            <h2 className="text-xl font-bold text-foreground">
+              {selectedCategory?.type === 'savings' ? 'Registrar Ahorro' : 'Registrar Ingreso'}
+            </h2>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
             <X className="w-5 h-5 text-muted-foreground" />
@@ -203,10 +210,19 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
               <button
                 type="button"
                 onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                className="w-full flex items-center justify-between px-3 py-2 border border-input rounded-md bg-background text-left text-foreground"
+                className={`w-full flex items-center justify-between px-3 py-2 border rounded-md bg-background text-left text-foreground ${
+                  selectedCategory?.type === 'savings' ? 'border-primary' : 'border-input'
+                }`}
               >
-                <span className={selectedCategory ? 'text-foreground' : 'text-muted-foreground'}>
-                  {selectedCategory ? selectedCategory.name : 'Seleccionar categoría'}
+                <span className="flex items-center gap-2">
+                  <span className={selectedCategory ? 'text-foreground' : 'text-muted-foreground'}>
+                    {selectedCategory ? selectedCategory.name : 'Seleccionar categoría'}
+                  </span>
+                  {selectedCategory?.type === 'savings' && (
+                    <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">
+                      Ahorro
+                    </span>
+                  )}
                 </span>
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </button>
@@ -221,24 +237,43 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
                         setCategoryId(category.id)
                         setShowCategoryDropdown(false)
                       }}
-                      className="w-full px-3 py-2 text-left hover:bg-muted flex items-center gap-2 text-foreground"
+                      className={`w-full px-3 py-2 text-left hover:bg-muted flex items-center gap-2 text-foreground ${
+                        category.type === 'savings' ? 'border-l-2 border-l-primary bg-primary/5' : ''
+                      }`}
                     >
                       <span>{category.icon}</span>
-                      <span>{category.name}</span>
+                      <span className="flex-1">{category.name}</span>
+                      {category.type === 'savings' && (
+                        <span className="text-xs text-primary">Ahorro</span>
+                      )}
                     </button>
                   ))}
                 </div>
               )}
             </div>
+            {selectedCategory?.type === 'savings' && (
+              <p className="text-xs text-primary mt-1">
+                Este ingreso se registrará como ahorro
+              </p>
+            )}
           </div>
 
           <div className="pt-4">
             <Button
               type="submit"
               disabled={isLoading || !amount || !description || !categoryId}
-              className="w-full bg-success hover:opacity-90 text-white py-3 rounded-xl font-semibold text-lg glow-success"
+              className={`w-full py-3 rounded-xl font-semibold text-lg ${
+                selectedCategory?.type === 'savings'
+                  ? 'bg-primary hover:opacity-90 text-white glow-primary'
+                  : 'bg-success hover:opacity-90 text-white glow-success'
+              }`}
             >
-              {isLoading ? 'Guardando...' : 'Guardar Ingreso'}
+              {isLoading 
+                ? 'Guardando...' 
+                : selectedCategory?.type === 'savings' 
+                  ? 'Guardar Ahorro' 
+                  : 'Guardar Ingreso'
+              }
             </Button>
           </div>
         </form>
