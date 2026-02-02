@@ -35,6 +35,10 @@ interface AppState {
   // Savings goal
   monthlySavingsGoalUSD: number
   setMonthlySavingsGoalUSD: (amount: number) => void
+  
+  // Hide total amount (privacy toggle)
+  hideTotalAmount: boolean
+  toggleHideTotalAmount: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -144,6 +148,10 @@ export const useAppStore = create<AppState>()(
       // Savings goal
       monthlySavingsGoalUSD: 0,
       setMonthlySavingsGoalUSD: (amount) => set({ monthlySavingsGoalUSD: amount }),
+      
+      // Hide total amount (privacy toggle)
+      hideTotalAmount: false,
+      toggleHideTotalAmount: () => set((state) => ({ hideTotalAmount: !state.hideTotalAmount })),
     }),
     {
       name: 'gastitos-storage',
@@ -151,7 +159,8 @@ export const useAppStore = create<AppState>()(
         showUsd: state.showUsd,
         exchangeRate: state.exchangeRate,
         budgets: state.budgets,
-        monthlySavingsGoalUSD: state.monthlySavingsGoalUSD
+        monthlySavingsGoalUSD: state.monthlySavingsGoalUSD,
+        hideTotalAmount: state.hideTotalAmount
       }),
     }
   )

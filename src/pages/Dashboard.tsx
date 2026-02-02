@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/appStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Download, Search, Target, Repeat, Trash2 } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Download, Search, Target, Repeat, Trash2, Eye, EyeOff } from 'lucide-react'
 import { AddExpenseModal } from '../components/AddExpenseModal'
 import { AddIncomeModal } from '../components/AddIncomeModal'
 import { SummaryView } from '../components/SummaryView'
@@ -11,7 +11,7 @@ import { BudgetManager } from '../components/BudgetManager'
 import { RecurringManager } from '../components/RecurringManager'
 
 export function Dashboard() {
-  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate, budgets, monthlySavingsGoalUSD } = useAppStore()
+  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate, budgets, monthlySavingsGoalUSD, hideTotalAmount, toggleHideTotalAmount } = useAppStore()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -22,6 +22,7 @@ export function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [showAllTransactions, setShowAllTransactions] = useState(false)
+  const [showInstallments, setShowInstallments] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] = useState<Expense | null>(null)
   const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
@@ -306,26 +307,43 @@ export function Dashboard() {
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-700">Total del Mes</h2>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={toggleShowUsd}
-            className="text-violet-600 border-violet-200"
-          >
-            <ArrowRightLeft className="w-4 h-4 mr-1" />
-            {showUsd ? 'USD' : 'ARS'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleHideTotalAmount}
+              className="text-violet-600 border-violet-200"
+              title={hideTotalAmount ? 'Mostrar montos' : 'Ocultar montos'}
+            >
+              {hideTotalAmount ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleShowUsd}
+              className="text-violet-600 border-violet-200"
+            >
+              <ArrowRightLeft className="w-4 h-4 mr-1" />
+              {showUsd ? 'USD' : 'ARS'}
+            </Button>
+          </div>
         </div>
         
         <div className="text-center">
           <div className={`text-4xl font-bold mb-1 ${
             balanceArs >= 0 ? 'text-emerald-600' : 'text-red-500'
           }`}>
-            {balanceArs >= 0 ? '+' : '−'}
-            {showUsd 
-              ? formatCurrency(Math.abs(balanceUsd), 'USD') 
-              : formatCurrency(Math.abs(balanceArs), 'ARS')
-            }
+            {hideTotalAmount ? (
+              '****'
+            ) : (
+              <>
+                {balanceArs >= 0 ? '+' : '−'}
+                {showUsd 
+                  ? formatCurrency(Math.abs(balanceUsd), 'USD') 
+                  : formatCurrency(Math.abs(balanceArs), 'ARS')
+                }
+              </>
+            )}
           </div>
           <p className="text-sm text-gray-500">
             Balance del mes
@@ -337,13 +355,13 @@ export function Dashboard() {
           <div className="text-center">
             <p className="text-xs text-gray-500 mb-1">Ingresos</p>
             <p className="text-lg font-semibold text-emerald-600">
-              {showUsd ? formatCurrency(totalIncomeUsd, 'USD') : formatCurrency(totalIncomeArs, 'ARS')}
+              {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalIncomeUsd, 'USD') : formatCurrency(totalIncomeArs, 'ARS'))}
             </p>
           </div>
           <div className="text-center">
             <p className="text-xs text-gray-500 mb-1">Gastos</p>
             <p className="text-lg font-semibold text-red-500">
-              {showUsd ? formatCurrency(totalExpensesUsd, 'USD') : formatCurrency(totalExpensesArs, 'ARS')}
+              {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalExpensesUsd, 'USD') : formatCurrency(totalExpensesArs, 'ARS'))}
             </p>
           </div>
         </div>
@@ -519,11 +537,11 @@ export function Dashboard() {
       </div>
 
       {/* Month Selector */}
-      <div className="flex gap-3 items-center">
+      <div className="flex gap-3 items-center flex-wrap">
         <select
           value={selectedMonth}
           onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-          className="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+          className="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white min-w-[120px]"
         >
           {Array.from({ length: 12 }, (_, i) => (
             <option key={i} value={i}>
@@ -547,6 +565,15 @@ export function Dashboard() {
         >
           {showAllTransactions ? 'Ver menos' : 'Ver todos'}
         </Button>
+        <label className="flex items-center gap-2 px-3 py-2 bg-violet-50 border border-violet-200 rounded-xl cursor-pointer hover:bg-violet-100 transition-colors">
+          <input
+            type="checkbox"
+            checked={showInstallments}
+            onChange={(e) => setShowInstallments(e.target.checked)}
+            className="w-4 h-4 text-violet-600 rounded focus:ring-violet-500"
+          />
+          <span className="text-sm font-medium text-violet-700">Ver cuotas</span>
+        </label>
       </div>
 
       {/* Recent Expenses */}
@@ -563,10 +590,15 @@ export function Dashboard() {
           </div>
         ) : (
           <div className="divide-y divide-violet-50">
-             {(showAllTransactions ? groupedExpenses : groupedExpenses.slice(0, 8)).map((expense) => (
+             {(showAllTransactions 
+               ? groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup)
+               : groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup).slice(0, 8)
+             ).map((expense) => (
               <div 
                 key={expense.id} 
-                className="p-4 flex items-center justify-between hover:bg-violet-50/50 cursor-pointer relative group"
+                className={`p-4 flex items-center justify-between hover:bg-violet-50/50 cursor-pointer relative group ${
+                  expense._isInstallmentGroup ? 'border-l-4 border-l-violet-500 bg-violet-50/30' : ''
+                }`}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   setTransactionToDelete(expense)
@@ -621,11 +653,18 @@ export function Dashboard() {
                     )
                   })()}
                   <div>
-                    <p className="font-medium text-gray-900">
-                      {expense._isInstallmentGroup
-                        ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '') // Remove (X/Y) from description
-                        : expense.description}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-gray-900">
+                        {expense._isInstallmentGroup
+                          ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '') // Remove (X/Y) from description
+                          : expense.description}
+                      </p>
+                      {expense._isInstallmentGroup && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">
+                          Cuota {expense.installment_number}/{expense.total_installments}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-500">
                       {(() => {
                         const category = categories.find(c => c.id === expense.category_id)

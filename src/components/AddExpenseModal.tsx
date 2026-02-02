@@ -36,7 +36,6 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
   const [paymentMethod, setPaymentMethod] = useState<'debit' | 'credit'>('debit')
   const [installments, setInstallments] = useState(1)
   const [isRecurring, setIsRecurring] = useState(false)
-  const [billingDay, setBillingDay] = useState(10)
   const [isLoading, setIsLoading] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -84,10 +83,14 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
         const installmentAmount = Math.floor(amountCents / installments)
         const remainder = amountCents % installments
         const baseDate = new Date(selectedDate + 'T12:00:00')
+        
+        // Get billing day from settings (localStorage)
+        const savedBillingDay = localStorage.getItem('defaultBillingDay')
+        const billingDayFromSettings = savedBillingDay ? parseInt(savedBillingDay) : 10
 
         const expensesToInsert = []
         for (let i = 0; i < installments; i++) {
-          const installmentDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, billingDay)
+          const installmentDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, billingDayFromSettings)
 
           const currentInstallmentAmount = i === 0 ? installmentAmount + remainder : installmentAmount
           const currentUsdAmount = Math.round(currentInstallmentAmount / exchangeRate)
@@ -148,7 +151,6 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
       setPaymentMethod('debit')
       setInstallments(1)
       setIsRecurring(false)
-      setBillingDay(10)
       setCurrency('ARS')
       
       // Reset date to today
@@ -362,29 +364,6 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                   Se dividirá en {installments} pagos de ${(getRawNumber(amount || '0') / installments).toFixed(2)} ARS cada uno
                 </p>
               )}
-
-              {/* Billing Day Selector */}
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Día de facturación (cuotas)
-                </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min="1"
-                    max="28"
-                    value={billingDay}
-                    onChange={(e) => setBillingDay(parseInt(e.target.value))}
-                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-violet-600"
-                  />
-                  <span className="text-lg font-semibold text-violet-600 w-12 text-center">
-                    {billingDay}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Las cuotas se vencerán el día {billingDay} de cada mes
-                </p>
-              </div>
             </div>
           )}
 
