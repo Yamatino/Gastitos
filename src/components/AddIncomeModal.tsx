@@ -228,7 +228,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
               </button>
               
               {showCategoryDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-10 max-h-60 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-50 max-h-[300px] overflow-y-auto">
                   {incomeCategories.map((category) => (
                     <button
                       key={category.id}
