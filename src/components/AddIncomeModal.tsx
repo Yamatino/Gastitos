@@ -120,7 +120,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">
               Monto (ARS)
