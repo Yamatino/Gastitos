@@ -86,6 +86,22 @@ export const useAppStore = create<AppState>()(
           { name: 'Servicios', icon: '💡', color: '#6B7280', is_default: true, user_id: user.id, type: 'expense' },
         ]
         
+        // Fix existing categories with wrong types
+        const categoriesToFix = existingCategories?.filter(cat => {
+          const defaultCat = defaultCategories.find(d => d.name.toLowerCase() === cat.name.toLowerCase())
+          return defaultCat && cat.type !== defaultCat.type
+        }) || []
+        
+        for (const cat of categoriesToFix) {
+          const defaultCat = defaultCategories.find(d => d.name.toLowerCase() === cat.name.toLowerCase())
+          if (defaultCat) {
+            await supabase
+              .from('categories')
+              .update({ type: defaultCat.type })
+              .eq('id', cat.id)
+          }
+        }
+        
         // Find which default categories are missing
         const missingDefaults = defaultCategories.filter(
           cat => !existingNames.has(cat.name.toLowerCase())
@@ -108,8 +124,17 @@ export const useAppStore = create<AppState>()(
           }
         }
         
-        // If no missing defaults, just set existing categories
-        set({ categories: existingCategories || [] })
+        // If we fixed categories, refetch them
+        if (categoriesToFix.length > 0) {
+          const { data: updatedCategories } = await supabase
+            .from('categories')
+            .select('*')
+            .eq('user_id', user.id)
+          set({ categories: updatedCategories || [] })
+        } else {
+          // If no missing defaults and no fixes, just set existing categories
+          set({ categories: existingCategories || [] })
+        }
       },
       addCategory: async (category) => {
         const { data: { user } } = await supabase.auth.getUser()
