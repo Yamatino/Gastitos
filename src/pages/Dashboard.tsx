@@ -206,8 +206,7 @@ export function Dashboard() {
 
   const pendingCuotas = expenses.filter(e => 
     e.is_installment && 
-    e.status === 'pending' &&
-    new Date(e.date + 'T12:00:00') <= new Date()
+    e.status === 'pending'
   )
 
   // Filter expenses based on search and selected month/year
@@ -408,10 +407,14 @@ export function Dashboard() {
             <span className="text-sm font-medium">Gastos Hoy</span>
           </div>
           <div className="text-2xl font-bold">
-            {expenses.filter(e => {
-              const today = new Date().toISOString().split('T')[0]
-              return e.date === today
-            }).length}
+            {(() => {
+              const today = new Date()
+              const year = today.getFullYear()
+              const month = String(today.getMonth() + 1).padStart(2, '0')
+              const day = String(today.getDate()).padStart(2, '0')
+              const todayStr = `${year}-${month}-${day}`
+              return expenses.filter(e => e.date === todayStr).length
+            })()}
           </div>
           <div className="text-sm opacity-90">transacciones</div>
         </div>
