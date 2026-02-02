@@ -39,6 +39,14 @@ interface AppState {
   // Hide total amount (privacy toggle)
   hideTotalAmount: boolean
   toggleHideTotalAmount: () => void
+  
+  // Theme
+  isLightMode: boolean
+  toggleTheme: () => void
+  
+  // Reduced motion
+  reducedMotion: boolean
+  toggleReducedMotion: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -152,6 +160,14 @@ export const useAppStore = create<AppState>()(
       // Hide total amount (privacy toggle)
       hideTotalAmount: false,
       toggleHideTotalAmount: () => set((state) => ({ hideTotalAmount: !state.hideTotalAmount })),
+      
+      // Theme (dark mode is default)
+      isLightMode: false,
+      toggleTheme: () => set((state) => ({ isLightMode: !state.isLightMode })),
+      
+      // Reduced motion
+      reducedMotion: false,
+      toggleReducedMotion: () => set((state) => ({ reducedMotion: !state.reducedMotion })),
     }),
     {
       name: 'gastitos-storage',
@@ -160,7 +176,9 @@ export const useAppStore = create<AppState>()(
         exchangeRate: state.exchangeRate,
         budgets: state.budgets,
         monthlySavingsGoalUSD: state.monthlySavingsGoalUSD,
-        hideTotalAmount: state.hideTotalAmount
+        hideTotalAmount: state.hideTotalAmount,
+        isLightMode: state.isLightMode,
+        reducedMotion: state.reducedMotion
       }),
     }
   )

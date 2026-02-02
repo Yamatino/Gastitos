@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/appStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Download, Search, Target, Repeat, Trash2, Eye, EyeOff } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Download, Search, Target, Repeat, Eye, EyeOff, DollarSign } from 'lucide-react'
 import { AddExpenseModal } from '../components/AddExpenseModal'
 import { AddIncomeModal } from '../components/AddIncomeModal'
 import { SummaryView } from '../components/SummaryView'
@@ -278,13 +278,13 @@ export function Dashboard() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto px-4">
       {/* Tab Navigation */}
-      <div className="flex bg-white rounded-xl p-1 shadow-sm border border-violet-100">
+      <div className="flex bg-card rounded-xl p-1 shadow-lg border border-border">
         <button
           onClick={() => setActiveTab('gastos')}
           className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
             activeTab === 'gastos'
-              ? 'bg-violet-600 text-white shadow-sm'
-              : 'text-gray-600 hover:bg-gray-50'
+              ? 'bg-primary text-primary-foreground shadow-lg glow-primary'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
           }`}
         >
           Gastos
@@ -293,8 +293,8 @@ export function Dashboard() {
           onClick={() => setActiveTab('resumen')}
           className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
             activeTab === 'resumen'
-              ? 'bg-violet-600 text-white shadow-sm'
-              : 'text-gray-600 hover:bg-gray-50'
+              ? 'bg-primary text-primary-foreground shadow-lg glow-primary'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
           }`}
         >
           Resumen
@@ -304,15 +304,15 @@ export function Dashboard() {
       {activeTab === 'gastos' && (
         <div className="space-y-6">
           {/* Total Card */}
-      <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
+      <div className="glass-card rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-700">Total del Mes</h2>
+          <h2 className="text-lg font-semibold text-foreground">Total del Mes</h2>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={toggleHideTotalAmount}
-              className="text-violet-600 border-violet-200"
+              className="text-primary border-primary/30 hover:bg-primary/10"
               title={hideTotalAmount ? 'Mostrar montos' : 'Ocultar montos'}
             >
               {hideTotalAmount ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -321,7 +321,7 @@ export function Dashboard() {
               variant="outline"
               size="sm"
               onClick={toggleShowUsd}
-              className="text-violet-600 border-violet-200"
+              className="text-primary border-primary/30 hover:bg-primary/10"
             >
               <ArrowRightLeft className="w-4 h-4 mr-1" />
               {showUsd ? 'USD' : 'ARS'}
@@ -330,8 +330,8 @@ export function Dashboard() {
         </div>
         
         <div className="text-center">
-          <div className={`text-4xl font-bold mb-1 ${
-            balanceArs >= 0 ? 'text-emerald-600' : 'text-red-500'
+          <div className={`text-4xl font-bold mb-1 font-mono-amount ${
+            balanceArs >= 0 ? 'text-success glow-success' : 'text-destructive glow-destructive'
           }`}>
             {hideTotalAmount ? (
               '****'
@@ -345,22 +345,22 @@ export function Dashboard() {
               </>
             )}
           </div>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Balance del mes
           </p>
         </div>
         
         {/* Income vs Expenses */}
-        <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">
+        <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-border">
           <div className="text-center">
-            <p className="text-xs text-gray-500 mb-1">Ingresos</p>
-            <p className="text-lg font-semibold text-emerald-600">
+            <p className="text-xs text-muted-foreground mb-1">Ingresos</p>
+            <p className="text-lg font-semibold text-success font-mono-amount">
               {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalIncomeUsd, 'USD') : formatCurrency(totalIncomeArs, 'ARS'))}
             </p>
           </div>
           <div className="text-center">
-            <p className="text-xs text-gray-500 mb-1">Gastos</p>
-            <p className="text-lg font-semibold text-red-500">
+            <p className="text-xs text-muted-foreground mb-1">Gastos</p>
+            <p className="text-lg font-semibold text-destructive font-mono-amount">
               {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalExpensesUsd, 'USD') : formatCurrency(totalExpensesArs, 'ARS'))}
             </p>
           </div>
@@ -369,36 +369,38 @@ export function Dashboard() {
 
       {/* Savings Card */}
       {monthlySavingsGoalUSD > 0 && (
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white">
+        <div className="glass-card rounded-2xl p-6 border border-primary/20">
           <div className="flex items-center gap-2 mb-4">
-            <span className="text-2xl">💎</span>
-            <h2 className="text-lg font-semibold">Ahorro del Mes</h2>
+            <div className="p-2 bg-primary/20 rounded-lg">
+              <DollarSign className="w-5 h-5 text-primary" />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">Ahorro del Mes</h2>
           </div>
-          <div className="text-3xl font-bold mb-3">
+          <div className="text-3xl font-bold mb-3 text-foreground font-mono-amount">
             {showUsd 
               ? formatCurrency(totalSavingsUsd, 'USD')
               : formatCurrency(totalSavingsArs, 'ARS')
             }
           </div>
           <div className="flex gap-4 text-sm">
-            <div className="bg-white/20 rounded-lg px-3 py-2">
-              <span className="opacity-80">Meta:</span>
-              <span className="font-semibold ml-1">
+            <div className="bg-muted rounded-lg px-3 py-2">
+              <span className="text-muted-foreground">Meta:</span>
+              <span className="font-semibold ml-1 text-foreground">
                 US${monthlySavingsGoalUSD}
               </span>
             </div>
-            <div className="bg-white/20 rounded-lg px-3 py-2">
-              <span className="opacity-80">Progreso:</span>
-              <span className="font-semibold ml-1">
+            <div className="bg-muted rounded-lg px-3 py-2">
+              <span className="text-muted-foreground">Progreso:</span>
+              <span className="font-semibold ml-1 text-foreground">
                 {savingsProgress.toFixed(0)}%
               </span>
             </div>
           </div>
           {/* Progress bar */}
           <div className="mt-3">
-            <div className="h-2 bg-white/30 rounded-full overflow-hidden">
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
               <div 
-                className="h-full bg-white rounded-full transition-all"
+                className="h-full bg-primary rounded-full transition-all shimmer"
                 style={{ width: `${savingsProgress}%` }}
               />
             </div>
@@ -408,23 +410,27 @@ export function Dashboard() {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl p-4 text-white">
+        <div className="glass-card rounded-2xl p-4 border border-primary/20">
           <div className="flex items-center gap-2 mb-2">
-            <CreditCard className="w-5 h-5" />
-            <span className="text-sm font-medium">Cuotas Pendientes</span>
+            <div className="p-1.5 bg-primary/20 rounded-lg">
+              <CreditCard className="w-4 h-4 text-primary" />
+            </div>
+            <span className="text-sm font-medium text-muted-foreground">Cuotas Pendientes</span>
           </div>
-          <div className="text-2xl font-bold">{pendingCuotas.length}</div>
-          <div className="text-sm opacity-90">
+          <div className="text-2xl font-bold text-foreground">{pendingCuotas.length}</div>
+          <div className="text-sm text-muted-foreground font-mono-amount">
             {formatCurrency(pendingCuotas.reduce((sum, c) => sum + (c.installment_amount_cents || 0), 0), 'ARS')}
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 text-white">
+        <div className="glass-card rounded-2xl p-4 border border-success/20">
           <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="w-5 h-5" />
-            <span className="text-sm font-medium">Gastos Hoy</span>
+            <div className="p-1.5 bg-success/20 rounded-lg">
+              <TrendingUp className="w-4 h-4 text-success" />
+            </div>
+            <span className="text-sm font-medium text-muted-foreground">Gastos Hoy</span>
           </div>
-          <div className="text-2xl font-bold">
+          <div className="text-2xl font-bold text-foreground">
             {(() => {
               const today = new Date()
               const year = today.getFullYear()
@@ -434,7 +440,7 @@ export function Dashboard() {
               return expenses.filter(e => e.date === todayStr).length
             })()}
           </div>
-          <div className="text-sm opacity-90">transacciones</div>
+          <div className="text-sm text-muted-foreground">transacciones</div>
         </div>
       </div>
 
@@ -443,7 +449,7 @@ export function Dashboard() {
         <Button
           onClick={() => setIsIncomeModalOpen(true)}
           variant="outline"
-          className="bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 py-3"
+          className="border-success/30 text-success hover:bg-success/10 hover:text-success py-3"
         >
           <TrendingUp className="w-4 h-4 mr-2" />
           Agregar Ingreso
@@ -451,7 +457,7 @@ export function Dashboard() {
         <Button
           onClick={() => setIsBudgetManagerOpen(true)}
           variant="outline"
-          className="bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 py-3"
+          className="border-warning/30 text-warning hover:bg-warning/10 hover:text-warning py-3"
         >
           <Target className="w-4 h-4 mr-2" />
           Presupuestos
@@ -459,7 +465,7 @@ export function Dashboard() {
         <Button
           onClick={() => setIsRecurringManagerOpen(true)}
           variant="outline"
-          className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 py-3"
+          className="border-primary/30 text-primary hover:bg-primary/10 hover:text-primary py-3"
         >
           <Repeat className="w-4 h-4 mr-2" />
           Recurrentes
@@ -468,8 +474,8 @@ export function Dashboard() {
 
       {/* Budget Progress */}
       {Object.keys(budgets).length > 0 && (
-        <div className="bg-white rounded-2xl p-4 shadow-lg border border-violet-100">
-          <h3 className="font-semibold text-gray-700 mb-3">Presupuestos</h3>
+        <div className="glass-card rounded-2xl p-4">
+          <h3 className="font-semibold text-foreground mb-3">Presupuestos</h3>
           <div className="space-y-3">
             {Object.entries(budgets).slice(0, 3).map(([categoryId, budgetAmount]) => {
               const category = categories.find(c => c.id === categoryId)
@@ -493,16 +499,16 @@ export function Dashboard() {
                   <div className="flex justify-between text-sm mb-1">
                     <span className="flex items-center gap-1">
                       <span>{category.icon}</span>
-                      <span className="text-gray-700">{category.name}</span>
+                      <span className="text-foreground">{category.name}</span>
                     </span>
-                    <span className={`font-semibold ${isOverBudget ? 'text-red-600' : 'text-gray-900'}`}>
+                    <span className={`font-semibold font-mono-amount ${isOverBudget ? 'text-destructive' : 'text-foreground'}`}>
                       {formatCurrency(spent, 'ARS')} / {formatCurrency(budgetAmount, 'ARS')}
                     </span>
                   </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
                     <div 
                       className={`h-full rounded-full ${
-                        isOverBudget ? 'bg-red-500' : percentage > 80 ? 'bg-amber-500' : 'bg-emerald-500'
+                        isOverBudget ? 'bg-destructive' : percentage > 80 ? 'bg-warning' : 'bg-success'
                       }`}
                       style={{ width: `${Math.min(percentage, 100)}%` }}
                     />
@@ -517,19 +523,19 @@ export function Dashboard() {
       {/* Search and Export Bar */}
       <div className="flex gap-3">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar gastos..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+            className="w-full pl-10 pr-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-foreground placeholder:text-muted-foreground"
           />
         </div>
         <Button
           onClick={exportToCSV}
           variant="outline"
-          className="px-4"
+          className="px-4 border-border hover:bg-muted"
         >
           <Download className="w-4 h-4 mr-2" />
           Exportar
@@ -541,7 +547,7 @@ export function Dashboard() {
         <select
           value={selectedMonth}
           onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-          className="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white min-w-[120px]"
+          className="flex-1 px-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-foreground min-w-[120px]"
         >
           {Array.from({ length: 12 }, (_, i) => (
             <option key={i} value={i}>
@@ -552,7 +558,7 @@ export function Dashboard() {
         <select
           value={selectedYear}
           onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-          className="px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-500 bg-white"
+          className="px-4 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-foreground"
         >
           {[2024, 2025, 2026].map(year => (
             <option key={year} value={year}>{year}</option>
@@ -561,43 +567,43 @@ export function Dashboard() {
         <Button
           variant="outline"
           onClick={() => setShowAllTransactions(!showAllTransactions)}
-          className="whitespace-nowrap"
+          className="whitespace-nowrap border-border hover:bg-muted"
         >
           {showAllTransactions ? 'Ver menos' : 'Ver todos'}
         </Button>
-        <label className="flex items-center gap-2 px-3 py-2 bg-violet-50 border border-violet-200 rounded-xl cursor-pointer hover:bg-violet-100 transition-colors">
+        <label className="flex items-center gap-2 px-3 py-2 bg-primary/10 border border-primary/30 rounded-xl cursor-pointer hover:bg-primary/20 transition-colors">
           <input
             type="checkbox"
             checked={showInstallments}
             onChange={(e) => setShowInstallments(e.target.checked)}
-            className="w-4 h-4 text-violet-600 rounded focus:ring-violet-500"
+            className="w-4 h-4 text-primary rounded focus:ring-primary bg-background border-input"
           />
-          <span className="text-sm font-medium text-violet-700">Ver cuotas</span>
+          <span className="text-sm font-medium text-primary">Ver cuotas</span>
         </label>
       </div>
 
       {/* Recent Expenses */}
-      <div className="bg-white rounded-2xl shadow-lg border border-violet-100 overflow-hidden">
-        <div className="p-4 border-b border-violet-100">
-          <h3 className="font-semibold text-gray-700">Transacciones Recientes</h3>
+      <div className="glass-card rounded-2xl overflow-hidden">
+        <div className="p-4 border-b border-border">
+          <h3 className="font-semibold text-foreground">Transacciones Recientes</h3>
         </div>
         
         {expenses.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <Wallet className="w-12 h-12 mx-auto mb-3 text-violet-300" />
+          <div className="p-8 text-center text-muted-foreground">
+            <Wallet className="w-12 h-12 mx-auto mb-3 text-primary/30" />
             <p>No hay gastos registrados</p>
             <p className="text-sm mt-1">¡Agrega tu primer gasto!</p>
           </div>
         ) : (
-          <div className="divide-y divide-violet-50">
+          <div className="divide-y divide-border">
              {(showAllTransactions 
                ? groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup)
                : groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup).slice(0, 8)
              ).map((expense) => (
               <div 
                 key={expense.id} 
-                className={`p-4 flex items-center justify-between hover:bg-violet-50/50 cursor-pointer relative group ${
-                  expense._isInstallmentGroup ? 'border-l-4 border-l-violet-500 bg-violet-50/30' : ''
+                className={`p-4 flex items-center justify-between hover:bg-muted/50 cursor-pointer relative group transition-colors ${
+                  expense._isInstallmentGroup ? 'border-l-4 border-l-primary bg-primary/5' : ''
                 }`}
                 onContextMenu={(e) => {
                   e.preventDefault()
@@ -644,8 +650,8 @@ export function Dashboard() {
                       <div
                         className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
                         style={{
-                          backgroundColor: category?.color ? `${category.color}20` : '#e5e7eb',
-                          color: category?.color || '#6b7280'
+                          backgroundColor: category?.color ? `${category.color}30` : 'hsl(var(--muted))',
+                          color: category?.color || 'hsl(var(--muted-foreground))'
                         }}
                       >
                         {category?.icon || '📦'}
@@ -654,18 +660,18 @@ export function Dashboard() {
                   })()}
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="font-medium text-gray-900">
+                      <p className="font-medium text-foreground">
                         {expense._isInstallmentGroup
                           ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '') // Remove (X/Y) from description
                           : expense.description}
                       </p>
                       {expense._isInstallmentGroup && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/20 text-primary">
                           Cuota {expense.installment_number}/{expense.total_installments}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted-foreground">
                       {(() => {
                         const category = categories.find(c => c.id === expense.category_id)
                         return category?.name || 'Sin categoría'
@@ -674,8 +680,8 @@ export function Dashboard() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className={`font-semibold ${
-                    expense.amount_cents < 0 ? 'text-emerald-600' : 'text-violet-600'
+                  <p className={`font-semibold font-mono-amount ${
+                    expense.amount_cents < 0 ? 'text-success' : 'text-primary'
                   }`}>
                     {expense.amount_cents < 0 ? '+' : ''}
                     {showUsd 
@@ -695,7 +701,7 @@ export function Dashboard() {
         <Button
           onClick={() => setIsModalOpen(true)}
           size="lg"
-          className="w-14 h-14 rounded-full bg-violet-600 hover:bg-violet-700 text-white shadow-lg hover:shadow-xl transition-all"
+          className="w-14 h-14 rounded-full bg-primary hover:opacity-90 text-primary-foreground shadow-lg glow-primary transition-all"
         >
           <Plus className="w-6 h-6" />
         </Button>
@@ -734,25 +740,24 @@ export function Dashboard() {
       {/* Delete Confirmation Modal */}
       {deleteModalOpen && transactionToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
-          <div className="relative bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Eliminar transacción</h3>
-            <p className="text-gray-600 mb-4">
-              ¿Estás seguro de que quieres eliminar "{transactionToDelete.description}" por {formatCurrency(Math.abs(transactionToDelete.amount_cents), 'ARS')}?
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
+          <div className="relative glass-card rounded-2xl p-6 shadow-2xl max-w-sm w-full border border-border">
+            <h3 className="text-lg font-bold text-foreground mb-2">Eliminar transacción</h3>
+            <p className="text-muted-foreground mb-4">
+              ¿Estás seguro de que quieres eliminar "{transactionToDelete.description}"?
             </p>
             <div className="flex gap-3">
               <Button
                 variant="outline"
                 onClick={() => setDeleteModalOpen(false)}
-                className="flex-1"
+                className="flex-1 border-border hover:bg-muted"
               >
                 Cancelar
               </Button>
               <Button
                 onClick={handleDeleteTransaction}
-                className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+                className="flex-1 bg-destructive hover:opacity-90 text-destructive-foreground"
               >
-                <Trash2 className="w-4 h-4 mr-2" />
                 Eliminar
               </Button>
             </div>

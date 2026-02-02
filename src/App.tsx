@@ -8,7 +8,7 @@ import { Button } from './components/ui/button'
 import { Settings } from 'lucide-react'
 
 function App() {
-  const { user, setUser, isLoading, setIsLoading, initializeCategories } = useAppStore()
+  const { user, setUser, isLoading, setIsLoading, initializeCategories, isLightMode, reducedMotion } = useAppStore()
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
   useEffect(() => {
@@ -58,8 +58,8 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-violet-50 to-purple-50">
-        <div className="text-violet-600 text-xl font-semibold">Cargando...</div>
+      <div className={`min-h-screen flex items-center justify-center ${isLightMode ? 'bg-gradient-to-br from-violet-50 to-purple-50' : 'bg-black'}`}>
+        <div className={`text-xl font-semibold ${isLightMode ? 'text-violet-600' : 'text-primary glow-primary'}`}>Cargando...</div>
       </div>
     )
   }
@@ -69,26 +69,31 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 to-purple-50 pb-20">
+    <div className={`min-h-screen pb-20 theme-transition ${reducedMotion ? '' : ''} ${isLightMode ? 'bg-gradient-to-br from-violet-50 to-purple-50' : 'bg-black'}`}>
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-violet-100 sticky top-0 z-10">
+      <header className={`backdrop-blur-md border-b sticky top-0 z-10 ${isLightMode ? 'bg-white/80 border-violet-100' : 'glass-card border-primary/10'}`}>
         <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-violet-900">Gastitos</h1>
-            <p className="text-xs text-violet-600">Tu tracker de gastos</p>
+            <h1 className={`text-xl font-bold ${isLightMode ? 'text-violet-900' : 'text-primary glow-primary'}`}>Gastitos</h1>
+            <p className={`text-xs ${isLightMode ? 'text-violet-600' : 'text-muted-foreground'}`}>Tu tracker de gastos</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-violet-700 hidden sm:block">{user.email}</span>
+            <span className={`text-sm hidden sm:block ${isLightMode ? 'text-violet-700' : 'text-muted-foreground'}`}>{user.email}</span>
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={() => setIsSettingsOpen(true)} 
-              className="text-violet-700 p-2"
+              className={`p-2 ${isLightMode ? 'text-violet-700' : 'text-primary hover:text-primary hover:bg-primary/10'}`}
               title="Configuración"
             >
               <Settings className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-violet-700">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleLogout} 
+              className={isLightMode ? 'text-violet-700' : 'text-muted-foreground hover:text-foreground'}
+            >
               Salir
             </Button>
           </div>
