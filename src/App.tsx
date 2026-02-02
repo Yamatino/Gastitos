@@ -71,7 +71,7 @@ function App() {
   return (
     <div className={`min-h-screen pb-20 theme-transition ${reducedMotion ? '' : ''} ${isLightMode ? 'bg-gradient-to-br from-violet-50 to-purple-50' : 'bg-black'}`}>
       {/* Header */}
-      <header className={`backdrop-blur-md border-b sticky top-0 z-10 ${isLightMode ? 'bg-white/80 border-violet-100' : 'glass-card border-primary/10'}`}>
+      <header className={`backdrop-blur-md border-b sticky top-0 z-10 ${isLightMode ? 'bg-white/80 border-violet-100' : 'bg-card/80 border-border'}`}>
         <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div>
             <h1 className={`text-xl font-bold ${isLightMode ? 'text-violet-900' : 'text-primary glow-primary'}`}>Gastitos</h1>

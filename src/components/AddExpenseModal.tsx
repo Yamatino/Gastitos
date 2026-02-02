@@ -176,31 +176,31 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
         onClick={onClose}
       />
       
       {/* Modal */}
-      <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 duration-300">
+      <div className="relative glass-card w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 duration-300 border border-border">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-100">
-          <h2 className="text-xl font-bold text-gray-900">Nuevo Gasto</h2>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="text-xl font-bold text-foreground">Nuevo Gasto</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-2 hover:bg-muted rounded-full transition-colors"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
           {/* Amount */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Monto ({currency})
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">{currency === 'ARS' ? '$' : 'US$'}</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold">{currency === 'ARS' ? '$' : 'US$'}</span>
               <Input
                 type="text"
                 value={amount}
@@ -210,7 +210,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                   setAmount(formattedValue)
                 }}
                 placeholder="0"
-                className="pl-12 text-lg font-mono"
+                className="pl-12 text-lg font-mono-amount bg-background"
                 required
               />
             </div>
@@ -221,8 +221,8 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                 onClick={() => setCurrency('ARS')}
                 className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                   currency === 'ARS'
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-primary text-primary-foreground glow-primary'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
                 }`}
               >
                 ARS ($)
@@ -232,8 +232,8 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                 onClick={() => setCurrency('USD')}
                 className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                   currency === 'USD'
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-primary text-primary-foreground glow-primary'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
                 }`}
               >
                 USD (US$)
@@ -243,7 +243,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Descripción
             </label>
             <Input
@@ -251,43 +251,44 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Ej: Cena con amigos"
+              className="bg-background"
               required
             />
           </div>
 
           {/* Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Fecha
             </label>
             <Input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full"
+              className="w-full bg-background"
               required
             />
           </div>
 
           {/* Category */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Categoría
             </label>
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                className="w-full flex items-center justify-between px-3 py-2 border border-input rounded-md bg-white text-left"
+                className="w-full flex items-center justify-between px-3 py-2 border border-input rounded-md bg-background text-left text-foreground"
               >
-                <span className={selectedCategory ? 'text-gray-900' : 'text-gray-400'}>
+                <span className={selectedCategory ? 'text-foreground' : 'text-muted-foreground'}>
                   {selectedCategory ? selectedCategory.name : 'Seleccionar categoría'}
                 </span>
-                <ChevronDown className="w-4 h-4 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </button>
               
               {showCategoryDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
                   {categories.filter(c => c.type === 'expense').map((category) => (
                     <button
                       key={category.id}
@@ -296,7 +297,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                         setCategoryId(category.id)
                         setShowCategoryDropdown(false)
                       }}
-                      className="w-full px-3 py-2 text-left hover:bg-violet-50 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left hover:bg-muted flex items-center gap-2 text-foreground"
                     >
                       <span>{category.icon}</span>
                       <span>{category.name}</span>
@@ -309,7 +310,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
 
           {/* Payment Method */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-foreground mb-2">
               Método de pago
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -318,8 +319,8 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                 onClick={() => setPaymentMethod('debit')}
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
                   paymentMethod === 'debit'
-                    ? 'border-violet-500 bg-violet-50 text-violet-700'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border hover:border-primary/50 text-muted-foreground'
                 }`}
               >
                 <Wallet className="w-4 h-4" />
@@ -330,8 +331,8 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                 onClick={() => setPaymentMethod('credit')}
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
                   paymentMethod === 'credit'
-                    ? 'border-violet-500 bg-violet-50 text-violet-700'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border hover:border-primary/50 text-muted-foreground'
                 }`}
               >
                 <CreditCard className="w-4 h-4" />
@@ -343,7 +344,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
           {/* Installments (only for credit) */}
           {paymentMethod === 'credit' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 Cantidad de cuotas
               </label>
               <div className="flex items-center gap-3">
@@ -353,14 +354,14 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
                   max="24"
                   value={installments}
                   onChange={(e) => setInstallments(parseInt(e.target.value))}
-                  className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-violet-600"
+                  className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
                 />
-                <span className="text-lg font-semibold text-violet-600 w-12 text-center">
+                <span className="text-lg font-semibold text-primary w-12 text-center">
                   {installments}
                 </span>
               </div>
               {installments > 1 && (
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Se dividirá en {installments} pagos de ${(getRawNumber(amount || '0') / installments).toFixed(2)} ARS cada uno
                 </p>
               )}
@@ -368,15 +369,15 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
           )}
 
           {/* Recurring Expense */}
-          <div className="flex items-center gap-3 p-3 bg-violet-50 rounded-xl">
+          <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-xl border border-primary/20">
             <input
               type="checkbox"
               id="isRecurring"
               checked={isRecurring}
               onChange={(e) => setIsRecurring(e.target.checked)}
-              className="w-5 h-5 text-violet-600 rounded focus:ring-violet-500"
+              className="w-5 h-5 text-primary rounded focus:ring-primary bg-background border-input"
             />
-            <label htmlFor="isRecurring" className="text-sm font-medium text-gray-700 cursor-pointer">
+            <label htmlFor="isRecurring" className="text-sm font-medium text-foreground cursor-pointer">
               Gasto recurrente mensual
             </label>
           </div>
@@ -386,7 +387,7 @@ export function AddExpenseModal({ isOpen, onClose, onSuccess, categories, exchan
             <Button
               type="submit"
               disabled={isLoading || !amount || !description || !categoryId}
-              className="w-full bg-violet-600 hover:bg-violet-700 text-white py-3 rounded-xl font-semibold text-lg"
+              className="w-full bg-primary hover:opacity-90 text-primary-foreground py-3 rounded-xl font-semibold text-lg glow-primary"
             >
               {isLoading ? 'Guardando...' : '💾 Guardar Gasto'}
             </Button>

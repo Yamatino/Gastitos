@@ -98,26 +98,28 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="relative bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+      <div className="relative glass-card w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden border border-border">
+        <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-emerald-600" />
-            <h2 className="text-xl font-bold text-gray-900">Registrar Ingreso</h2>
+            <div className="p-1.5 bg-success/20 rounded-lg">
+              <TrendingUp className="w-5 h-5 text-success" />
+            </div>
+            <h2 className="text-xl font-bold text-foreground">Registrar Ingreso</h2>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
-            <X className="w-5 h-5 text-gray-500" />
+          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
+            <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Monto (ARS)
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold">$</span>
               <Input
                 type="text"
                 value={amount}
@@ -127,14 +129,14 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
                   setAmount(formattedValue)
                 }}
                 placeholder="0"
-                className="pl-8 text-lg font-mono"
+                className="pl-8 text-lg font-mono-amount bg-background"
                 required
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Descripción
             </label>
             <Input
@@ -142,26 +144,27 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Ej: Sueldo mensual"
+              className="bg-background"
               required
             />
           </div>
 
           {/* Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Fecha
             </label>
           <Input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="w-full"
+            className="w-full bg-background"
             required
           />
         </div>
 
         {/* Count for Next Month Checkbox */}
-        <div className="flex items-center gap-3 p-3 bg-emerald-50 rounded-xl">
+        <div className="flex items-center gap-3 p-3 bg-success/10 rounded-xl border border-success/20">
           <input
             type="checkbox"
             id="countForNextMonth"
@@ -185,31 +188,31 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
                 setSelectedDate(`${year}-${month}-${day}`)
               }
             }}
-            className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+            className="w-5 h-5 text-success rounded focus:ring-success bg-background border-input"
           />
-          <label htmlFor="countForNextMonth" className="text-sm font-medium text-gray-700 cursor-pointer flex-1">
+          <label htmlFor="countForNextMonth" className="text-sm font-medium text-foreground cursor-pointer flex-1">
             Contar para el mes siguiente (1ro del próximo mes)
           </label>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Categoría
             </label>
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                className="w-full flex items-center justify-between px-3 py-2 border border-input rounded-md bg-white text-left"
+                className="w-full flex items-center justify-between px-3 py-2 border border-input rounded-md bg-background text-left text-foreground"
               >
-                <span className={selectedCategory ? 'text-gray-900' : 'text-gray-400'}>
+                <span className={selectedCategory ? 'text-foreground' : 'text-muted-foreground'}>
                   {selectedCategory ? selectedCategory.name : 'Seleccionar categoría'}
                 </span>
-                <ChevronDown className="w-4 h-4 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
               </button>
               
               {showCategoryDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
                   {incomeCategories.map((category) => (
                     <button
                       key={category.id}
@@ -218,7 +221,7 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
                         setCategoryId(category.id)
                         setShowCategoryDropdown(false)
                       }}
-                      className="w-full px-3 py-2 text-left hover:bg-emerald-50 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left hover:bg-muted flex items-center gap-2 text-foreground"
                     >
                       <span>{category.icon}</span>
                       <span>{category.name}</span>
@@ -233,9 +236,9 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
             <Button
               type="submit"
               disabled={isLoading || !amount || !description || !categoryId}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-semibold text-lg"
+              className="w-full bg-success hover:opacity-90 text-white py-3 rounded-xl font-semibold text-lg glow-success"
             >
-              {isLoading ? 'Guardando...' : '💰 Guardar Ingreso'}
+              {isLoading ? 'Guardando...' : 'Guardar Ingreso'}
             </Button>
           </div>
         </form>
