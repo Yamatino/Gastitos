@@ -410,7 +410,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       .insert(missingDefaults)
                     
                     if (error) {
-                      alert('Error al restaurar categorías')
+                      alert('Error al restaurar categorías: ' + error.message)
+                      console.error(error)
                     } else {
                       alert(`Se agregaron ${missingDefaults.length} categorías: ${missingDefaults.map(c => c.name).join(', ')}`)
                       // Refresh categories
@@ -424,6 +425,34 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               >
                 <Plus className="w-5 h-5" />
                 Restaurar categorías por defecto
+              </button>
+
+              {/* Fix Category Types Button */}
+              <button
+                onClick={async () => {
+                  const { data: { user } } = await supabase.auth.getUser()
+                  if (!user) return
+                  
+                  // Update Ahorro category to have type='savings'
+                  const { error } = await supabase
+                    .from('categories')
+                    .update({ type: 'savings' })
+                    .eq('user_id', user.id)
+                    .eq('name', 'Ahorro')
+                    .is('type', null)
+                  
+                  if (error) {
+                    alert('Error al reparar tipos: ' + error.message)
+                    console.error(error)
+                  } else {
+                    alert('Tipos de categorías reparados. La página se recargará.')
+                    window.location.reload()
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-warning/30 rounded-xl text-warning hover:bg-warning/10 transition-colors mb-4"
+              >
+                <Plus className="w-5 h-5" />
+                Reparar tipo de categoría Ahorro
               </button>
 
               {/* Categories List */}
