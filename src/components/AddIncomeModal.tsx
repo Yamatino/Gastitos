@@ -102,10 +102,10 @@ export function AddIncomeModal({ isOpen, onClose, onSuccess, categories, exchang
   const selectedCategory = categories.find(c => c.id === categoryId)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="relative glass-card w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden border border-border">
+      <div className="relative glass-card w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-border max-h-[90vh]">
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div className="flex items-center gap-2">
             <div className="p-1.5 bg-success/20 rounded-lg">
