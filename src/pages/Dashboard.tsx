@@ -57,23 +57,26 @@ export function Dashboard() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] = useState<Expense | null>(null)
   const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [hasLoaded, setHasLoaded] = useState(false)
 
   useEffect(() => {
-    loadData()
-  }, [])
+    // Only load data once when user becomes available
+    if (currentUser && !hasLoaded) {
+      loadData()
+    }
+  }, [currentUser, hasLoaded])
 
   const loadData = async () => {
+    if (hasLoaded) return // Prevent multiple loads
+    
     setIsLoading(true)
+    setHasLoaded(true) // Mark as loaded immediately to prevent re-runs
+    
     try {
-      // Use the user from userStore (which includes dev bypass users)
-      if (currentUser) {
-        console.log('Loading data for user:', currentUser.id)
-        await dataFetchExpenses(currentUser.id)
-        await dataFetchCategories(currentUser.id)
-        await checkAndCreateRecurring(currentUser.id)
-      } else {
-        console.log('No user found in store, skipping data load')
-      }
+      console.log('Loading data for user:', currentUser?.id)
+      await dataFetchExpenses(currentUser!.id)
+      await dataFetchCategories(currentUser!.id)
+      await checkAndCreateRecurring(currentUser!.id)
     } catch (error) {
       console.error('Error loading data:', error)
       alert('Error al cargar datos. Por favor recarga la página.')
