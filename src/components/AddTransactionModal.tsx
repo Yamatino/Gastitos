@@ -30,7 +30,7 @@ interface AddTransactionModalProps {
 }
 
 export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: AddTransactionModalProps) {
-  const { exchangeRate } = useUserStore()
+  const { user, exchangeRate } = useUserStore()
   const { addExpense, addInstallments } = useDataStore()
   
   const [activeTab, setActiveTab] = useState<TransactionType>('expense')
@@ -102,6 +102,11 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
       return
     }
 
+    if (!user) {
+      alert('Error: Usuario no autenticado')
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -129,7 +134,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           const billingDayFromSettings = savedBillingDay ? parseInt(savedBillingDay) : 10
           
           await addInstallments({
-            userId: '', // Will be set in the API
+            userId: user.id,
             description,
             amountCents,
             currency: 'ARS',
@@ -143,7 +148,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
         } else {
           // Single expense
           await addExpense({
-            user_id: '', // Will be set in the API
+            user_id: user.id,
             description,
             amount_cents: amountCents,
             currency: 'ARS',
@@ -172,7 +177,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
         const usdAmountCents = Math.round(amountCents / exchangeRate)
         
         await addExpense({
-          user_id: '', // Will be set in the API
+          user_id: user.id,
           description,
           amount_cents: -amountCents, // Negative for income
           currency: 'ARS',
@@ -198,7 +203,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
         const usdAmountCents = Math.round(amountCents / exchangeRate)
         
         await addExpense({
-          user_id: '', // Will be set in the API
+          user_id: user.id,
           description,
           amount_cents: amountCents,
           currency: 'ARS',
