@@ -55,7 +55,6 @@ export function Dashboard() {
   const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
   // Get store references
   const dataStore = useDataStore()
-  const uiStore = useUIStore()
 
   // Track previous user ID to prevent unnecessary re-runs
   const prevUserIdRef = useRef<string | undefined>(undefined)
@@ -86,15 +85,14 @@ export function Dashboard() {
   const reloadData = async () => {
     if (!currentUser?.id) return
     
-    uiStore.setIsLoading(true)
+    // Don't show global loading spinner - data is already updated in local state
+    // Just refresh in background to ensure consistency
     try {
       // Reset loaded user ID to force reload
       dataStore.setLoadedUserId(null)
       await dataStore.loadUserData(currentUser.id)
     } catch (error) {
       console.error('Error reloading data:', error)
-    } finally {
-      uiStore.setIsLoading(false)
     }
   }
 
