@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { supabase } from '../services/supabase'
+import { useAppStore } from '../stores/appStore'
 import { Button } from '../components/ui/button'
 import { CreditCard, Wallet } from 'lucide-react'
 
 export function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const { setUser } = useAppStore()
 
   const handleGoogleLogin = async () => {
     try {
@@ -22,6 +24,32 @@ export function LoginPage() {
       if (error) throw error
     } catch (err) {
       setError('Error al iniciar sesión con Google')
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Dev bypass for testing - only works on localhost or preview deployments
+  const handleDevBypass = async () => {
+    try {
+      setIsLoading(true)
+      setError('')
+      
+      // Create a mock user for testing
+      const mockUser = {
+        id: 'dev-user-' + Date.now(),
+        email: 'dev@test.com',
+        user_metadata: { name: 'Dev User' }
+      }
+      
+      // Store in localStorage to persist across reloads
+      localStorage.setItem('devBypassUser', JSON.stringify(mockUser))
+      
+      // Set user in store
+      setUser(mockUser as any)
+    } catch (err) {
+      setError('Error en bypass de desarrollo')
       console.error(err)
     } finally {
       setIsLoading(false)
@@ -81,6 +109,21 @@ export function LoginPage() {
             </>
           )}
         </Button>
+
+        {/* Dev bypass button - only shows on preview deployments */}
+        {window.location.hostname.includes('vercel.app') && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <p className="text-xs text-gray-400 mb-2">Desarrollo</p>
+            <Button
+              onClick={handleDevBypass}
+              disabled={isLoading}
+              variant="outline"
+              className="w-full border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 py-2 text-sm"
+            >
+              Entrar sin Google (Test)
+            </Button>
+          </div>
+        )}
 
         <p className="mt-6 text-xs text-gray-400">
           Al iniciar sesión, aceptas nuestros términos de uso

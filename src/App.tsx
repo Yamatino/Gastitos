@@ -14,6 +14,16 @@ function App() {
   useEffect(() => {
     setIsLoading(true)
     
+    // Check for dev bypass user first
+    const devBypassUser = localStorage.getItem('devBypassUser')
+    if (devBypassUser) {
+      console.log('Dev bypass user found')
+      setUser(JSON.parse(devBypassUser))
+      setIsLoading(false)
+      initializeCategories()
+      return
+    }
+    
     // Check if we have OAuth hash to parse
     const hash = window.location.hash
     const hasAuthHash = hash && hash.includes('access_token')
@@ -53,6 +63,8 @@ function App() {
   }, [])
 
   const handleLogout = async () => {
+    // Clear dev bypass user if present
+    localStorage.removeItem('devBypassUser')
     await supabase.auth.signOut()
   }
 
