@@ -155,7 +155,22 @@ export const useDataStore = create<DataState>()((set, get) => ({
   // Category operations
   addCategory: async (categoryData) => {
     try {
-      const newCategory = await apiCreateCategory(categoryData)
+      // Get current user from Supabase auth
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        throw new AppError(
+          'Usuario no autenticado',
+          ErrorCodes.AUTH_ERROR,
+          'high',
+          null,
+          false
+        )
+      }
+      
+      const newCategory = await apiCreateCategory({
+        ...categoryData,
+        user_id: user.id
+      })
       set((state) => ({
         categories: [...state.categories, newCategory]
       }))
