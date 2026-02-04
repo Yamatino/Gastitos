@@ -1,4 +1,5 @@
 import { supabase } from '../services/supabase';
+import type { Expense, Category } from '../services/supabase';
 import { AppError, ErrorCodes, getErrorMessage, handleSupabaseError, withRetry } from './errors';
 
 const DEFAULT_TIMEOUT = 10000; // 10 seconds
@@ -99,14 +100,26 @@ export async function createExpense(expenseData: {
   date: string;
   transaction_type: 'expense' | 'income' | 'savings';
   is_salary?: boolean;
-}) {
-  return queryWithTimeout(async () => {
+}): Promise<Expense> {
+  const result = await queryWithTimeout(async () => {
     return supabase
       .from('expenses')
       .insert(expenseData)
       .select()
       .single();
   });
+  
+  if (!result) {
+    throw new AppError(
+      'Error al crear la transacción',
+      ErrorCodes.DB_QUERY_ERROR,
+      'high',
+      null,
+      false
+    );
+  }
+  
+  return result as Expense;
 }
 
 // Create installments using stored procedure
@@ -145,14 +158,26 @@ export async function createCategory(categoryData: {
   icon: string;
   color: string;
   is_default: boolean;
-}) {
-  return queryWithTimeout(async () => {
+}): Promise<Category> {
+  const result = await queryWithTimeout(async () => {
     return supabase
       .from('categories')
       .insert(categoryData)
       .select()
       .single();
   });
+  
+  if (!result) {
+    throw new AppError(
+      'Error al crear la categoría',
+      ErrorCodes.DB_QUERY_ERROR,
+      'high',
+      null,
+      false
+    );
+  }
+  
+  return result as Category;
 }
 
 // Delete category with check for transactions
@@ -230,6 +255,9 @@ export async function fetchExchangeRate(): Promise<number> {
     return 1000;
   }
 }
+
+// Re-export error handling functions
+export { AppError, ErrorCodes, getErrorMessage, showErrorAlert } from './errors';
 
 // Export for backwards compatibility
 export { supabase };
