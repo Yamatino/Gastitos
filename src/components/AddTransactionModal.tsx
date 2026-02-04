@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { supabase } from '../services/supabase'
-import type { Category } from '../services/supabase'
+import { motion, AnimatePresence } from 'framer-motion'
+import { useUserStore } from '../stores/userStore'
+import { useDataStore } from '../stores/dataStore'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, CreditCard, Wallet, TrendingUp, PiggyBank, ChevronDown } from 'lucide-react'
+import type { Category } from '../services/supabase'
 
 type TransactionType = 'expense' | 'income' | 'savings'
 
@@ -25,10 +27,12 @@ interface AddTransactionModalProps {
   onClose: () => void
   onSuccess: () => void
   categories: Category[]
-  exchangeRate: number
 }
 
-export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, exchangeRate }: AddTransactionModalProps) {
+export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: AddTransactionModalProps) {
+  const { exchangeRate } = useUserStore()
+  const { addExpense, addInstallments } = useDataStore()
+  
   const [activeTab, setActiveTab] = useState<TransactionType>('expense')
   
   // Common fields
@@ -52,14 +56,19 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
   const [isRecurring, setIsRecurring] = useState(false)
   
   // Income-specific fields
+  const [isSalary, setIsSalary] = useState(false)
   const [countForNextMonth, setCountForNextMonth] = useState(false)
 
   if (!isOpen) return null
 
   const handleTabChange = (tab: TransactionType) => {
     setActiveTab(tab)
-    setCategoryId('') // Reset category when switching tabs
+    setCategoryId('')
     setShowCategoryDropdown(false)
+    // Reset tab-specific fields
+    if (tab === 'income') {
+      setIsSalary(false)
+    }
   }
 
   const resetForm = () => {
@@ -69,6 +78,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
     setPaymentMethod('debit')
     setInstallments(1)
     setIsRecurring(false)
+    setIsSalary(false)
     setCountForNextMonth(false)
     setCurrency('ARS')
     const d = new Date()
@@ -80,16 +90,23 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!amount || !description || !categoryId) return
+    
+    // Validation
+    if (!amount || !description) {
+      alert('Por favor completa todos los campos requeridos')
+      return
+    }
+    
+    if (activeTab === 'expense' && !categoryId) {
+      alert('Por favor selecciona una categoría')
+      return
+    }
 
     setIsLoading(true)
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('No user')
-
       const rawAmount = getRawNumber(amount)
-
+      
       if (activeTab === 'expense') {
         // Handle expense
         let amountCents: number
@@ -107,53 +124,26 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
         }
 
         if (paymentMethod === 'credit' && installments > 1) {
-          // Create multiple installment records
-          const installmentGroupId = crypto.randomUUID()
-          const installmentAmount = Math.floor(amountCents / installments)
-          const remainder = amountCents % installments
-          const baseDate = new Date(selectedDate + 'T12:00:00')
-          
+          // Use stored procedure for installments
           const savedBillingDay = localStorage.getItem('defaultBillingDay')
           const billingDayFromSettings = savedBillingDay ? parseInt(savedBillingDay) : 10
-
-          const expensesToInsert = []
-          for (let i = 0; i < installments; i++) {
-            const installmentDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, billingDayFromSettings)
-            const currentInstallmentAmount = i === 0 ? installmentAmount + remainder : installmentAmount
-            const currentUsdAmount = Math.round(currentInstallmentAmount / exchangeRate)
-
-            expensesToInsert.push({
-              user_id: user.id,
-              description: `${description} (${i + 1}/${installments})`,
-              amount_cents: currentInstallmentAmount,
-              currency: 'ARS',
-              exchange_rate: exchangeRate,
-              usd_amount_cents: currentUsdAmount,
-              original_currency: currency === 'USD' ? 'USD' : undefined,
-              original_amount_cents: currency === 'USD' ? Math.round(currentInstallmentAmount / exchangeRate) : undefined,
-              category_id: categoryId,
-              payment_method: 'credit',
-              is_installment: true,
-              installment_group_id: installmentGroupId,
-              installment_number: i + 1,
-              total_installments: installments,
-              installment_amount_cents: currentInstallmentAmount,
-              date: (() => {
-                const year = installmentDate.getFullYear()
-                const month = String(installmentDate.getMonth() + 1).padStart(2, '0')
-                const day = String(installmentDate.getDate()).padStart(2, '0')
-                return `${year}-${month}-${day}`
-              })(),
-              status: i === 0 ? 'paid' : 'pending',
-            })
-          }
-
-          const { error } = await supabase.from('expenses').insert(expensesToInsert)
-          if (error) throw error
+          
+          await addInstallments({
+            userId: '', // Will be set in the API
+            description,
+            amountCents,
+            currency: 'ARS',
+            exchangeRate,
+            usdAmountCents,
+            categoryId,
+            installmentCount: installments,
+            baseDate: selectedDate,
+            billingDay: billingDayFromSettings
+          })
         } else {
           // Single expense
-          const { error } = await supabase.from('expenses').insert({
-            user_id: user.id,
+          await addExpense({
+            user_id: '', // Will be set in the API
             description,
             amount_cents: amountCents,
             currency: 'ARS',
@@ -163,34 +153,71 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
             original_amount_cents: originalAmountCents,
             category_id: categoryId,
             payment_method: paymentMethod,
-            is_installment: false,
             is_recurring: isRecurring,
             date: selectedDate,
+            transaction_type: 'expense',
+            is_installment: false,
             status: 'paid',
+            installment_group_id: null,
+            installment_number: null,
+            total_installments: null,
+            installment_amount_cents: null,
+            recurring_parent_id: null,
+            is_salary: false
           })
-          if (error) throw error
         }
-      } else {
-        // Handle income or savings
+      } else if (activeTab === 'income') {
+        // Handle income
         const amountCents = Math.round(rawAmount * 100)
         const usdAmountCents = Math.round(amountCents / exchangeRate)
-        const isSavings = activeTab === 'savings'
-
-        const { error } = await supabase.from('expenses').insert({
-          user_id: user.id,
-          description: isSavings ? `[Ahorro] ${description}` : description,
-          amount_cents: isSavings ? amountCents : -amountCents,
+        
+        await addExpense({
+          user_id: '', // Will be set in the API
+          description,
+          amount_cents: -amountCents, // Negative for income
           currency: 'ARS',
           exchange_rate: exchangeRate,
-          usd_amount_cents: isSavings ? usdAmountCents : -usdAmountCents,
-          category_id: categoryId,
+          usd_amount_cents: -usdAmountCents,
+          category_id: null, // No category for income
           payment_method: 'debit',
-          is_installment: false,
-          date: selectedDate,
-          status: 'paid',
           is_recurring: false,
+          date: selectedDate,
+          transaction_type: 'income',
+          is_salary: isSalary,
+          is_installment: false,
+          status: 'paid',
+          installment_group_id: null,
+          installment_number: null,
+          total_installments: null,
+          installment_amount_cents: null,
+          recurring_parent_id: null
         })
-        if (error) throw error
+      } else {
+        // Handle savings
+        const amountCents = Math.round(rawAmount * 100)
+        const usdAmountCents = Math.round(amountCents / exchangeRate)
+        
+        await addExpense({
+          user_id: '', // Will be set in the API
+          description,
+          amount_cents: amountCents,
+          currency: 'ARS',
+          exchange_rate: exchangeRate,
+          usd_amount_cents: usdAmountCents,
+          category_id: null, // No category for savings
+          payment_method: 'debit',
+          is_recurring: false,
+          date: selectedDate,
+          transaction_type: 'savings',
+          is_installment: false,
+          status: 'paid',
+          installment_group_id: null,
+          installment_number: null,
+          total_installments: null,
+          installment_amount_cents: null,
+          recurring_parent_id: null,
+          is_salary: false
+        })
       }
 
       resetForm()
@@ -198,24 +225,13 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
       onClose()
     } catch (err) {
       console.error('Error adding transaction:', err)
-      alert('Error al guardar la transacción')
+      // Error is already shown via alert in the store
     } finally {
       setIsLoading(false)
     }
   }
 
-  const getFilteredCategories = () => {
-    if (activeTab === 'expense') {
-      return categories.filter(c => c.type === 'expense')
-    } else if (activeTab === 'income') {
-      return categories.filter(c => c.type === 'income')
-    } else {
-      return categories.filter(c => c.type === 'savings')
-    }
-  }
-
   const selectedCategory = categories.find(c => c.id === categoryId)
-  const filteredCategories = getFilteredCategories()
 
   const getTabIcon = (tab: TransactionType) => {
     switch (tab) {
@@ -253,6 +269,13 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
     }
   }
 
+  // Animation variants
+  const contentVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -10 }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
@@ -262,7 +285,13 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
       />
 
       {/* Modal */}
-      <div className="relative glass-card w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border border-border max-h-[90vh]">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        className="relative glass-card w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-border max-h-[90vh]"
+      >
         {/* Header with Tabs */}
         <div className="border-b border-border">
           <div className="flex items-center justify-between p-4 pb-2">
@@ -299,247 +328,277 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ex
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
-          {/* Amount */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Monto ({activeTab === 'expense' ? currency : 'ARS'})
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold">
-                {activeTab === 'expense' && currency === 'USD' ? 'US$' : '$'}
-              </span>
-              <Input
-                type="text"
-                value={amount}
-                onChange={(e) => {
-                  const rawValue = e.target.value.replace(/[^\d]/g, '')
-                  const formattedValue = formatNumberWithDots(rawValue)
-                  setAmount(formattedValue)
-                }}
-                placeholder="0"
-                className="pl-12 text-lg font-mono-amount bg-background"
-                required
-              />
-            </div>
-            
-            {/* Currency Toggle (only for expenses) */}
-            {activeTab === 'expense' && (
-              <div className="flex gap-2 mt-2">
-                <button
-                  type="button"
-                  onClick={() => setCurrency('ARS')}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                    currency === 'ARS'
-                      ? 'bg-primary text-primary-foreground glow-primary'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
-                >
-                  ARS ($)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrency('USD')}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                    currency === 'USD'
-                      ? 'bg-primary text-primary-foreground glow-primary'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
-                >
-                  USD (US$)
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Descripción
-            </label>
-            <Input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={activeTab === 'expense' ? 'Ej: Cena con amigos' : activeTab === 'income' ? 'Ej: Sueldo mensual' : 'Ej: Ahorro de emergencia'}
-              className="bg-background"
-              required
-            />
-          </div>
-
-          {/* Date */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Fecha
-            </label>
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full bg-background"
-              required
-            />
-          </div>
-
-          {/* Count for Next Month (only for income) */}
-          {activeTab === 'income' && (
-            <div className="flex items-center gap-3 p-3 bg-success/10 rounded-xl border border-success/20">
-              <input
-                type="checkbox"
-                id="countForNextMonth"
-                checked={countForNextMonth}
-                onChange={(e) => {
-                  const checked = e.target.checked
-                  setCountForNextMonth(checked)
-                  if (checked) {
-                    const today = new Date()
-                    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1)
-                    const year = nextMonth.getFullYear()
-                    const month = String(nextMonth.getMonth() + 1).padStart(2, '0')
-                    setSelectedDate(`${year}-${month}-01`)
-                  } else {
-                    const today = new Date()
-                    const year = today.getFullYear()
-                    const month = String(today.getMonth() + 1).padStart(2, '0')
-                    const day = String(today.getDate()).padStart(2, '0')
-                    setSelectedDate(`${year}-${month}-${day}`)
-                  }
-                }}
-                className="w-5 h-5 text-success rounded focus:ring-success bg-background border-input"
-              />
-              <label htmlFor="countForNextMonth" className="text-sm font-medium text-foreground cursor-pointer flex-1">
-                Contar para el mes siguiente (1ro del próximo mes)
-              </label>
-            </div>
-          )}
-
-          {/* Category */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Categoría
-            </label>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                className="w-full flex items-center justify-between px-3 py-2 border border-input rounded-md bg-background text-left text-foreground"
-              >
-                <span className={selectedCategory ? 'text-foreground' : 'text-muted-foreground'}>
-                  {selectedCategory ? selectedCategory.name : 'Seleccionar categoría'}
-                </span>
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
-              </button>
-              
-              {showCategoryDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
-                  {filteredCategories.map((category) => (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              variants={contentVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={{ duration: 0.2 }}
+              className="space-y-4"
+            >
+              {/* Amount */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Monto ({activeTab === 'expense' ? currency : 'ARS'})
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold">
+                    {activeTab === 'expense' && currency === 'USD' ? 'US$' : '$'}
+                  </span>
+                  <Input
+                    type="text"
+                    value={amount}
+                    onChange={(e) => {
+                      const rawValue = e.target.value.replace(/[^\d]/g, '')
+                      const formattedValue = formatNumberWithDots(rawValue)
+                      setAmount(formattedValue)
+                    }}
+                    placeholder="0"
+                    className="pl-12 text-lg font-mono-amount bg-background"
+                    required
+                  />
+                </div>
+                
+                {/* Currency Toggle (only for expenses) */}
+                {activeTab === 'expense' && (
+                  <div className="flex gap-2 mt-2">
                     <button
-                      key={category.id}
                       type="button"
-                      onClick={() => {
-                        setCategoryId(category.id)
-                        setShowCategoryDropdown(false)
-                      }}
-                      className="w-full px-3 py-2 text-left hover:bg-muted flex items-center gap-2 text-foreground"
+                      onClick={() => setCurrency('ARS')}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                        currency === 'ARS'
+                          ? 'bg-primary text-primary-foreground glow-primary'
+                          : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                      }`}
                     >
-                      <span>{category.icon}</span>
-                      <span>{category.name}</span>
+                      ARS ($)
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setCurrency('USD')}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                        currency === 'USD'
+                          ? 'bg-primary text-primary-foreground glow-primary'
+                          : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                      }`}
+                    >
+                      USD (US$)
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Descripción
+                </label>
+                <Input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder={activeTab === 'expense' ? 'Ej: Cena con amigos' : activeTab === 'income' ? 'Ej: Sueldo mensual' : 'Ej: Ahorro de emergencia'}
+                  className="bg-background"
+                  required
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Fecha
+                </label>
+                <Input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-full bg-background"
+                  required
+                />
+              </div>
+
+              {/* Income-specific: Is Salary checkbox */}
+              {activeTab === 'income' && (
+                <div className="flex items-center gap-3 p-3 bg-success/10 rounded-xl border border-success/20">
+                  <input
+                    type="checkbox"
+                    id="isSalary"
+                    checked={isSalary}
+                    onChange={(e) => setIsSalary(e.target.checked)}
+                    className="w-5 h-5 text-success rounded focus:ring-success bg-background border-input"
+                  />
+                  <label htmlFor="isSalary" className="text-sm font-medium text-foreground cursor-pointer flex-1">
+                    Es salario 💰
+                  </label>
                 </div>
               )}
-            </div>
-          </div>
 
-          {/* Payment Method (only for expenses) */}
-          {activeTab === 'expense' && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Método de pago
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('debit')}
-                  className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
-                    paymentMethod === 'debit'
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border hover:border-primary/50 text-muted-foreground'
-                  }`}
-                >
-                  <Wallet className="w-4 h-4" />
-                  Débito
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('credit')}
-                  className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
-                    paymentMethod === 'credit'
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border hover:border-primary/50 text-muted-foreground'
-                  }`}
-                >
-                  <CreditCard className="w-4 h-4" />
-                  Crédito
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Installments (only for credit expenses) */}
-          {activeTab === 'expense' && paymentMethod === 'credit' && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
-                Cantidad de cuotas
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min="1"
-                  max="24"
-                  value={installments}
-                  onChange={(e) => setInstallments(parseInt(e.target.value))}
-                  className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                />
-                <span className="text-lg font-semibold text-primary w-12 text-center">
-                  {installments}
-                </span>
-              </div>
-              {installments > 1 && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Se dividirá en {installments} pagos de ${(getRawNumber(amount || '0') / installments).toFixed(2)} ARS cada uno
-                </p>
+              {/* Income-specific: Count for Next Month */}
+              {activeTab === 'income' && (
+                <div className="flex items-center gap-3 p-3 bg-success/10 rounded-xl border border-success/20">
+                  <input
+                    type="checkbox"
+                    id="countForNextMonth"
+                    checked={countForNextMonth}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setCountForNextMonth(checked)
+                      if (checked) {
+                        const today = new Date()
+                        const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+                        const year = nextMonth.getFullYear()
+                        const month = String(nextMonth.getMonth() + 1).padStart(2, '0')
+                        setSelectedDate(`${year}-${month}-01`)
+                      } else {
+                        const today = new Date()
+                        const year = today.getFullYear()
+                        const month = String(today.getMonth() + 1).padStart(2, '0')
+                        const day = String(today.getDate()).padStart(2, '0')
+                        setSelectedDate(`${year}-${month}-${day}`)
+                      }
+                    }}
+                    className="w-5 h-5 text-success rounded focus:ring-success bg-background border-input"
+                  />
+                  <label htmlFor="countForNextMonth" className="text-sm font-medium text-foreground cursor-pointer flex-1">
+                    Contar para el mes siguiente (1ro del próximo mes)
+                  </label>
+                </div>
               )}
-            </div>
-          )}
 
-          {/* Recurring Expense (only for expenses) */}
-          {activeTab === 'expense' && (
-            <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-xl border border-primary/20">
-              <input
-                type="checkbox"
-                id="isRecurring"
-                checked={isRecurring}
-                onChange={(e) => setIsRecurring(e.target.checked)}
-                className="w-5 h-5 text-primary rounded focus:ring-primary bg-background border-input"
-              />
-              <label htmlFor="isRecurring" className="text-sm font-medium text-foreground cursor-pointer">
-                Gasto recurrente mensual
-              </label>
-            </div>
-          )}
+              {/* Category (only for expenses) */}
+              {activeTab === 'expense' && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Categoría
+                  </label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                      className="w-full flex items-center justify-between px-3 py-2 border border-input rounded-md bg-background text-left text-foreground"
+                    >
+                      <span className={selectedCategory ? 'text-foreground' : 'text-muted-foreground'}>
+                        {selectedCategory ? selectedCategory.name : 'Seleccionar categoría'}
+                      </span>
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                    
+                    {showCategoryDropdown && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
+                        {categories.map((category) => (
+                          <button
+                            key={category.id}
+                            type="button"
+                            onClick={() => {
+                              setCategoryId(category.id)
+                              setShowCategoryDropdown(false)
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-muted flex items-center gap-2 text-foreground"
+                          >
+                            <span>{category.icon}</span>
+                            <span>{category.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Payment Method (only for expenses) */}
+              {activeTab === 'expense' && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Método de pago
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('debit')}
+                      className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
+                        paymentMethod === 'debit'
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border hover:border-primary/50 text-muted-foreground'
+                      }`}
+                    >
+                      <Wallet className="w-4 h-4" />
+                      Débito
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('credit')}
+                      className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
+                        paymentMethod === 'credit'
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border hover:border-primary/50 text-muted-foreground'
+                      }`}
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      Crédito
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Installments (only for credit expenses) */}
+              {activeTab === 'expense' && paymentMethod === 'credit' && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Cantidad de cuotas
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="1"
+                      max="24"
+                      value={installments}
+                      onChange={(e) => setInstallments(parseInt(e.target.value))}
+                      className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                    <span className="text-lg font-semibold text-primary w-12 text-center">
+                      {installments}
+                    </span>
+                  </div>
+                  {installments > 1 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Se dividirá en {installments} pagos de ${(getRawNumber(amount || '0') / installments).toFixed(2)} ARS cada uno
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Recurring Expense (only for expenses) */}
+              {activeTab === 'expense' && (
+                <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-xl border border-primary/20">
+                  <input
+                    type="checkbox"
+                    id="isRecurring"
+                    checked={isRecurring}
+                    onChange={(e) => setIsRecurring(e.target.checked)}
+                    className="w-5 h-5 text-primary rounded focus:ring-primary bg-background border-input"
+                  />
+                  <label htmlFor="isRecurring" className="text-sm font-medium text-foreground cursor-pointer">
+                    Gasto recurrente mensual
+                  </label>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
 
           {/* Submit Button */}
           <div className="pt-4">
             <Button
               type="submit"
-              disabled={isLoading || !amount || !description || !categoryId}
+              disabled={isLoading || !amount || !description || (activeTab === 'expense' && !categoryId)}
               className={`w-full py-3 rounded-xl font-semibold text-lg ${getSubmitButtonClass()}`}
             >
               {getSubmitButtonText()}
             </Button>
           </div>
         </form>
-      </div>
+      </motion.div>
     </div>
   )
 }
