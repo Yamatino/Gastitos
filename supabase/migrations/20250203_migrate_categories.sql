@@ -42,9 +42,12 @@ BEGIN
         RAISE NOTICE 'Found Ahorro category: % (ID: %)', v_ahorro_cat.name, v_ahorro_cat.id;
         
         -- Update all transactions with this category to transaction_type='savings'
+        -- Savings should have positive amounts
         UPDATE expenses
         SET transaction_type = 'savings',
-            category_id = NULL  -- Remove category reference
+            category_id = NULL,  -- Remove category reference
+            amount_cents = ABS(amount_cents),
+            usd_amount_cents = ABS(usd_amount_cents)
         WHERE category_id = v_ahorro_cat.id;
         
         GET DIAGNOSTICS v_count = ROW_COUNT;
@@ -66,10 +69,13 @@ BEGIN
         RAISE NOTICE 'Found Salario category: % (ID: %)', v_salario_cat.name, v_salario_cat.id;
         
         -- Update all transactions with this category
+        -- Income should have negative amounts
         UPDATE expenses
         SET transaction_type = 'income',
             is_salary = true,
-            category_id = NULL
+            category_id = NULL,
+            amount_cents = -ABS(amount_cents),
+            usd_amount_cents = -ABS(usd_amount_cents)
         WHERE category_id = v_salario_cat.id;
         
         GET DIAGNOSTICS v_count = ROW_COUNT;
@@ -90,10 +96,13 @@ BEGIN
         RAISE NOTICE 'Found Otros income category: % (ID: %)', v_otros_cat.name, v_otros_cat.id;
         
         -- Update all transactions with this category
+        -- Income should have negative amounts
         UPDATE expenses
         SET transaction_type = 'income',
             is_salary = false,
-            category_id = NULL
+            category_id = NULL,
+            amount_cents = -ABS(amount_cents),
+            usd_amount_cents = -ABS(usd_amount_cents)
         WHERE category_id = v_otros_cat.id;
         
         GET DIAGNOSTICS v_count = ROW_COUNT;
@@ -115,7 +124,9 @@ BEGIN
         UPDATE expenses
         SET transaction_type = 'income',
             is_salary = false,
-            category_id = NULL
+            category_id = NULL,
+            amount_cents = -ABS(amount_cents),
+            usd_amount_cents = -ABS(usd_amount_cents)
         WHERE id = v_expense.id;
         
         v_count := v_count + 1;
@@ -134,8 +145,11 @@ END $$;
 -- STEP 2: Mark remaining expense transactions
 -- ============================================
 
+-- Ensure all expense transactions have positive amounts
 UPDATE expenses
-SET transaction_type = 'expense'
+SET transaction_type = 'expense',
+    amount_cents = ABS(amount_cents),
+    usd_amount_cents = ABS(usd_amount_cents)
 WHERE transaction_type = 'expense' OR transaction_type IS NULL;
 
 INSERT INTO migration_log (migration_name, details)
