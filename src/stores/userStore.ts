@@ -41,7 +41,18 @@ export const useUserStore = create<UserState>()(
     (set) => ({
       // User
       user: null,
-      setUser: (user) => set({ user }),
+      setUser: (user) => set((state) => {
+        // Only update if the user ID has actually changed
+        const currentId = state.user?.id
+        const newId = user?.id
+        
+        if (currentId === newId) {
+          // User hasn't changed, don't update state
+          return state
+        }
+        
+        return { user }
+      }),
       
       // Preferences
       showUsd: false,

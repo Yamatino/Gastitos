@@ -19,14 +19,17 @@ interface DataState {
   // Data
   expenses: Expense[]
   categories: Category[]
+  loadedUserId: string | null
   
   // Actions
   setExpenses: (expenses: Expense[]) => void
   setCategories: (categories: Category[]) => void
+  setLoadedUserId: (userId: string | null) => void
   
   // Fetch operations
   fetchExpenses: (userId: string) => Promise<void>
   fetchCategories: (userId: string) => Promise<void>
+  loadUserData: (userId: string) => Promise<void>
   
   // Create operations
   addExpense: (expenseData: Omit<Expense, 'id' | 'created_at' | 'updated_at'>) => Promise<Expense>
@@ -58,17 +61,17 @@ export const useDataStore = create<DataState>()((set, get) => ({
   // Initial state
   expenses: [],
   categories: [],
+  loadedUserId: null,
   
   // Setters
   setExpenses: (expenses) => set({ expenses }),
   setCategories: (categories) => set({ categories }),
+  setLoadedUserId: (userId) => set({ loadedUserId: userId }),
   
   // Fetch operations
   fetchExpenses: async (userId) => {
     try {
-      console.log('Fetching expenses for user:', userId)
       const expenses = await apiFetchExpenses(userId)
-      console.log('Fetched expenses:', expenses?.length || 0)
       set({ expenses: expenses || [] })
     } catch (error) {
       console.error('Error fetching expenses:', error)
@@ -79,14 +82,35 @@ export const useDataStore = create<DataState>()((set, get) => ({
   
   fetchCategories: async (userId) => {
     try {
-      console.log('Fetching categories for user:', userId)
       const categories = await apiFetchCategories(userId)
-      console.log('Fetched categories:', categories?.length || 0)
       set({ categories: categories || [] })
     } catch (error) {
       console.error('Error fetching categories:', error)
       showErrorAlert(error, 'Error al cargar categorías')
       set({ categories: [] })
+    }
+  },
+  
+  // Load all user data at once with deduplication
+  loadUserData: async (userId) => {
+    const state = get()
+    
+    // Skip if we already loaded data for this user
+    if (state.loadedUserId === userId) {
+      return
+    }
+    
+    // Set loaded user ID first to prevent concurrent calls
+    set({ loadedUserId: userId })
+    
+    try {
+      await get().fetchExpenses(userId)
+      await get().fetchCategories(userId)
+    } catch (error) {
+      console.error('Error loading user data:', error)
+      // Reset on error so we can retry
+      set({ loadedUserId: null })
+      throw error
     }
   },
   
@@ -206,7 +230,17 @@ export const useDataStore = create<DataState>()((set, get) => ({
         }
       }
       
-      set({ categories: existingCategories || [] })
+      // Only update state if categories are different from current state
+      const currentCategories = get().categories
+      const existingCats = existingCategories || []
+      
+      // Check if arrays are different
+      const hasChanged = currentCategories.length !== existingCats.length ||
+        existingCats.some((cat, index) => currentCategories[index]?.id !== cat.id)
+      
+      if (hasChanged) {
+        set({ categories: existingCats })
+      }
     } catch (error) {
       console.error('Error initializing categories:', error)
       throw error

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { supabase } from './services/supabase'
 import { useUserStore } from './stores/userStore'
 import { useDataStore } from './stores/dataStore'
@@ -13,6 +13,7 @@ function App() {
   const { user, setUser, isLightMode, reducedMotion } = useUserStore()
   const { initializeCategories } = useDataStore()
   const { isSettingsOpen, setIsSettingsOpen, isLoading, setIsLoading } = useUIStore()
+  const categoriesInitializedForUser = useRef<string | null>(null)
 
   useEffect(() => {
     setIsLoading(true)
@@ -20,7 +21,6 @@ function App() {
     // Check for dev bypass user first
     const devBypassUser = localStorage.getItem('devBypassUser')
     if (devBypassUser) {
-      console.log('Dev bypass user found in App.tsx')
       const parsedUser = JSON.parse(devBypassUser)
       setUser(parsedUser)
       // Don't set loading to false here - let the auth state handler do it
@@ -36,16 +36,16 @@ function App() {
     const hash = window.location.hash
     const hasAuthHash = hash && hash.includes('access_token')
     
-    console.log('App mounted, hash present:', !!hash, 'has auth:', hasAuthHash)
+    // App initialization
 
     // Listen for auth changes FIRST (before checking session)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email)
       setUser(session?.user ?? null)
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         setIsLoading(false)
-        // Initialize categories for both new sign-ins and existing sessions
-        if (session?.user) {
+        // Initialize categories only once per user
+        if (session?.user && categoriesInitializedForUser.current !== session.user.id) {
+          categoriesInitializedForUser.current = session.user.id
           initializeCategories(session.user.id)
         }
       }
@@ -58,11 +58,10 @@ function App() {
         if (error) {
           console.error('Session error:', error)
         }
-        console.log('Initial session check:', session?.user?.email ?? 'none')
-        setUser(session?.user ?? null)
-        setIsLoading(false)
-        if (session?.user) {
-          initializeCategories(session.user.id)
+        // Don't call setUser here - onAuthStateChange handles it
+        // Just handle the loading state if there's no session
+        if (!session) {
+          setIsLoading(false)
         }
       })
     } else {

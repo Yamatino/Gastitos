@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useUserStore } from '../stores/userStore'
 import { useDataStore } from '../stores/dataStore'
 import { useUIStore } from '../stores/uiStore'
@@ -25,9 +25,7 @@ export function Dashboard() {
   // Data store
   const { 
     expenses, 
-    categories,
-    fetchExpenses: dataFetchExpenses,
-    fetchCategories: dataFetchCategories
+    categories
   } = useDataStore()
   
   // UI store
@@ -49,39 +47,54 @@ export function Dashboard() {
     showAllTransactions,
     setShowAllTransactions,
     showInstallments,
-    setShowInstallments,
-    isLoading,
-    setIsLoading
+    setShowInstallments
   } = useUIStore()
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] = useState<Expense | null>(null)
   const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
-  const [hasLoaded, setHasLoaded] = useState(false)
+  // Get store references
+  const dataStore = useDataStore()
+  const uiStore = useUIStore()
 
+  // Track previous user ID to prevent unnecessary re-runs
+  const prevUserIdRef = useRef<string | undefined>(undefined)
+  const [isLocalLoading, setIsLocalLoading] = useState(false)
+  
+  // Load data when user ID changes
   useEffect(() => {
-    // Only load data once when user becomes available
-    if (currentUser && !hasLoaded) {
-      loadData()
+    const userId = currentUser?.id
+    
+    // Only run if userId changed
+    if (userId && userId !== prevUserIdRef.current) {
+      prevUserIdRef.current = userId
+      
+      setIsLocalLoading(true)
+      dataStore.loadUserData(userId)
+        .then(() => checkAndCreateRecurring(userId))
+        .catch((error) => {
+          console.error('Error loading data:', error)
+          alert('Error al cargar datos. Por favor recarga la página.')
+        })
+        .finally(() => {
+          setIsLocalLoading(false)
+        })
     }
-  }, [currentUser, hasLoaded])
+  }, [currentUser?.id])
 
-  const loadData = async () => {
-    if (hasLoaded) return // Prevent multiple loads
+  // Function to reload data (used after adding transactions)
+  const reloadData = async () => {
+    if (!currentUser?.id) return
     
-    setIsLoading(true)
-    setHasLoaded(true) // Mark as loaded immediately to prevent re-runs
-    
+    uiStore.setIsLoading(true)
     try {
-      console.log('Loading data for user:', currentUser?.id)
-      await dataFetchExpenses(currentUser!.id)
-      await dataFetchCategories(currentUser!.id)
-      await checkAndCreateRecurring(currentUser!.id)
+      // Reset loaded user ID to force reload
+      dataStore.setLoadedUserId(null)
+      await dataStore.loadUserData(currentUser.id)
     } catch (error) {
-      console.error('Error loading data:', error)
-      alert('Error al cargar datos. Por favor recarga la página.')
+      console.error('Error reloading data:', error)
     } finally {
-      setIsLoading(false)
+      uiStore.setIsLoading(false)
     }
   }
 
@@ -98,7 +111,7 @@ export function Dashboard() {
       
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        await dataFetchExpenses(user.id)
+        await dataStore.fetchExpenses(user.id)
       }
       setDeleteModalOpen(false)
       setTransactionToDelete(null)
@@ -287,7 +300,7 @@ export function Dashboard() {
     return null
   }
 
-  if (isLoading) {
+  if (isLocalLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-violet-600">Cargando...</div>
@@ -640,7 +653,7 @@ export function Dashboard() {
           <AddTransactionModal
             isOpen={isTransactionModalOpen}
             onClose={() => setIsTransactionModalOpen(false)}
-            onSuccess={loadData}
+            onSuccess={reloadData}
             categories={categories}
           />
 
