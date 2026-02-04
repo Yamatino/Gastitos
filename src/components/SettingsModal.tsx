@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useAppStore } from '../stores/appStore'
+import { useUserStore } from '../stores/userStore'
+import { useDataStore } from '../stores/dataStore'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, Settings, DollarSign, Bell, Target, CreditCard, Plus, Trash2, Sun, Moon, Zap, ZapOff } from 'lucide-react'
@@ -10,10 +11,8 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+  // User store for preferences
   const { 
-    categories, 
-    addCategory, 
-    removeCategory,
     showUsd, 
     toggleShowUsd,
     monthlySavingsGoalUSD,
@@ -22,7 +21,14 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     toggleTheme,
     reducedMotion,
     toggleReducedMotion
-  } = useAppStore()
+  } = useUserStore()
+  
+  // Data store for categories
+  const { 
+    categories, 
+    addCategory, 
+    removeCategory 
+  } = useDataStore()
   
   const [activeTab, setActiveTab] = useState<'general' | 'cuotas' | 'categorias'>('general')
   const [budgetAlertThreshold, setBudgetAlertThreshold] = useState(80)
@@ -48,34 +54,28 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         name: newCategoryName.trim(),
         icon: newCategoryIcon,
         color: newCategoryColor,
-        is_default: false,
-        type: 'expense'
+        is_default: false
       })
       
       setNewCategoryName('')
       setIsAddingCategory(false)
     } catch (err) {
       console.error('Error adding category:', err)
-      alert('Error al agregar categoría')
+      // Error is already shown via alert in the store
     }
   }
 
-  const handleRemoveCategory = async (id: string, isDefault: boolean) => {
-    if (isDefault) {
-      alert('No se pueden eliminar categorías por defecto')
-      return
-    }
+  const handleRemoveCategory = async (id: string) => {
     if (!confirm('¿Estás seguro de que quieres eliminar esta categoría?')) return
 
     try {
       await removeCategory(id)
     } catch (err) {
-      alert('Error al eliminar categoría')
+      // Error is already shown via alert in the store
     }
   }
 
   const handleSaveBillingDay = () => {
-    // Save to localStorage for now, could be saved to Supabase user preferences later
     localStorage.setItem('defaultBillingDay', billingDay.toString())
     alert('Día de facturación guardado')
   }
@@ -307,7 +307,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-primary/30 rounded-xl text-primary hover:bg-primary/10 transition-colors"
                 >
                   <Plus className="w-5 h-5" />
-                  Agregar categoría personalizada
+                  Agregar categoría de gasto
                 </button>
               ) : (
                 <div className="p-4 bg-secondary rounded-xl space-y-3">
@@ -387,19 +387,16 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                       <span className="text-2xl">{category.icon}</span>
                       <div>
                         <span className="font-medium text-foreground">{category.name}</span>
-                        {category.is_default && (
-                          <span className="ml-2 text-xs text-muted-foreground">(por defecto)</span>
-                        )}
+                        <span className="ml-2 text-xs text-muted-foreground">(Gasto)</span>
                       </div>
                     </div>
-                    {!category.is_default && (
-                      <button
-                        onClick={() => handleRemoveCategory(category.id, category.is_default)}
-                        className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleRemoveCategory(category.id)}
+                      className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                      title="Eliminar categoría"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -408,6 +405,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <div className="text-center py-8 text-muted-foreground">
                   <Target className="w-12 h-12 mx-auto mb-2 text-primary/30" />
                   <p>No hay categorías</p>
+                  <p className="text-sm mt-1">Agrega tu primera categoría de gasto</p>
                 </div>
               )}
             </div>

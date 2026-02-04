@@ -13,7 +13,7 @@ export type Expense = {
   currency: string
   exchange_rate: number
   usd_amount_cents: number
-  category_id: string
+  category_id: string | null
   payment_method: 'debit' | 'credit'
   is_installment: boolean
   installment_group_id: string | null
@@ -25,6 +25,10 @@ export type Expense = {
   is_recurring: boolean
   recurring_parent_id: string | null
   created_at: string
+  updated_at: string
+  // Transaction type (expense, income, savings)
+  transaction_type: 'expense' | 'income' | 'savings'
+  is_salary: boolean
   // USD payment tracking
   original_currency?: 'ARS' | 'USD'
   original_amount_cents?: number
@@ -37,6 +41,5 @@ export type Category = {
   icon: string
   color: string
   is_default: boolean
-  type: 'income' | 'expense' | 'savings'
   created_at: string
 }
