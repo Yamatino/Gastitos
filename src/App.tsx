@@ -20,10 +20,15 @@ function App() {
     // Check for dev bypass user first
     const devBypassUser = localStorage.getItem('devBypassUser')
     if (devBypassUser) {
-      console.log('Dev bypass user found')
-      setUser(JSON.parse(devBypassUser))
-      setIsLoading(false)
-      initializeCategories(JSON.parse(devBypassUser).id)
+      console.log('Dev bypass user found in App.tsx')
+      const parsedUser = JSON.parse(devBypassUser)
+      setUser(parsedUser)
+      // Don't set loading to false here - let the auth state handler do it
+      // or we'll handle it after a short delay to ensure state is set
+      setTimeout(() => {
+        setIsLoading(false)
+        initializeCategories(parsedUser.id)
+      }, 100)
       return
     }
     

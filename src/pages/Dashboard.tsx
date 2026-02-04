@@ -15,6 +15,7 @@ import { RecurringManager } from '../components/RecurringManager'
 export function Dashboard() {
   // User store
   const { 
+    user: currentUser,
     showUsd, 
     toggleShowUsd, 
     hideTotalAmount, 
@@ -64,14 +65,14 @@ export function Dashboard() {
   const loadData = async () => {
     setIsLoading(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        console.log('Loading data for user:', user.id)
-        await dataFetchExpenses(user.id)
-        await dataFetchCategories(user.id)
-        await checkAndCreateRecurring(user.id)
+      // Use the user from userStore (which includes dev bypass users)
+      if (currentUser) {
+        console.log('Loading data for user:', currentUser.id)
+        await dataFetchExpenses(currentUser.id)
+        await dataFetchCategories(currentUser.id)
+        await checkAndCreateRecurring(currentUser.id)
       } else {
-        console.log('No user found, skipping data load')
+        console.log('No user found in store, skipping data load')
       }
     } catch (error) {
       console.error('Error loading data:', error)
