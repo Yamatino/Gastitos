@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { supabase } from '../services/supabase'
-import { useAppStore } from '../stores/appStore'
+import { useUserStore } from '../stores/userStore'
 import { Button } from '../components/ui/button'
 import { CreditCard, Wallet } from 'lucide-react'
 
 export function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const { setUser } = useAppStore()
+  const { setUser } = useUserStore()
 
   const handleGoogleLogin = async () => {
     try {

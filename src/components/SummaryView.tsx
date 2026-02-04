@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useAppStore } from '../stores/appStore'
+import { useUserStore } from '../stores/userStore'
+import { useDataStore } from '../stores/dataStore'
 import { formatCurrency } from '../lib/utils'
 import { supabase } from '../services/supabase'
 import type { Expense } from '../services/supabase'
@@ -12,7 +13,8 @@ import { CreditCard, TrendingUp, Trash2, Package } from 'lucide-react'
 import { fetchInflationData, type ProcessedInflation } from '../services/inflation'
 
 export function SummaryView() {
-  const { expenses, categories, exchangeRate, showUsd } = useAppStore()
+  const { exchangeRate, showUsd } = useUserStore()
+  const { expenses, categories } = useDataStore()
   const [isLoading, setIsLoading] = useState(true)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null)

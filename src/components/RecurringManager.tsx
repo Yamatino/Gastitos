@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useAppStore } from '../stores/appStore'
+import { useDataStore } from '../stores/dataStore'
 import { supabase } from '../services/supabase'
 import { Input } from './ui/input'
 import { X, Repeat, Trash2, Edit2, Check } from 'lucide-react'
@@ -11,7 +11,7 @@ interface RecurringManagerProps {
 }
 
 export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
-  const { expenses, categories, setExpenses } = useAppStore()
+  const { expenses, categories, setExpenses } = useDataStore()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState('')
   const [isLoading, setIsLoading] = useState(false)

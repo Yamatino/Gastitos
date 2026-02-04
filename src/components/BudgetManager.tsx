@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useAppStore } from '../stores/appStore'
+import { useUserStore } from '../stores/userStore'
+import { useDataStore } from '../stores/dataStore'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, Plus, Target, Trash2, TrendingUp } from 'lucide-react'
@@ -11,7 +12,8 @@ interface BudgetManagerProps {
 }
 
 export function BudgetManager({ isOpen, onClose }: BudgetManagerProps) {
-  const { categories, budgets, setBudget, removeBudget, expenses } = useAppStore()
+  const { budgets, setBudget, removeBudget } = useUserStore()
+  const { categories, expenses } = useDataStore()
   const [selectedCategory, setSelectedCategory] = useState('')
   const [budgetAmount, setBudgetAmount] = useState('')
   const [isAdding, setIsAdding] = useState(false)
