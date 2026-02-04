@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useAppStore } from '../stores/appStore'
+import { useUserStore } from '../stores/userStore'
+import { useDataStore } from '../stores/dataStore'
+import { useUIStore } from '../stores/uiStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
@@ -11,48 +13,67 @@ import { BudgetManager } from '../components/BudgetManager'
 import { RecurringManager } from '../components/RecurringManager'
 
 export function Dashboard() {
-  const { expenses, setExpenses, categories, setCategories, showUsd, toggleShowUsd, exchangeRate, setExchangeRate, hideTotalAmount, toggleHideTotalAmount } = useAppStore()
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'gastos' | 'resumen'>('gastos')
-  const [isBudgetManagerOpen, setIsBudgetManagerOpen] = useState(false)
-  const [isRecurringManagerOpen, setIsRecurringManagerOpen] = useState(false)
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth())
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
-  const [showAllTransactions, setShowAllTransactions] = useState(false)
-  const [showInstallments, setShowInstallments] = useState(false)
+  // User store
+  const { 
+    showUsd, 
+    toggleShowUsd, 
+    hideTotalAmount, 
+    toggleHideTotalAmount
+  } = useUserStore()
+  
+  // Data store
+  const { 
+    expenses, 
+    categories,
+    fetchExpenses: dataFetchExpenses,
+    fetchCategories: dataFetchCategories
+  } = useDataStore()
+  
+  // UI store
+  const { 
+    isTransactionModalOpen, 
+    setIsTransactionModalOpen,
+    isBudgetManagerOpen,
+    setIsBudgetManagerOpen,
+    isRecurringManagerOpen,
+    setIsRecurringManagerOpen,
+    activeTab,
+    setActiveTab,
+    searchQuery,
+    setSearchQuery,
+    selectedMonth,
+    setSelectedMonth,
+    selectedYear,
+    setSelectedYear,
+    showAllTransactions,
+    setShowAllTransactions,
+    showInstallments,
+    setShowInstallments,
+    isLoading,
+    setIsLoading
+  } = useUIStore()
+
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] = useState<Expense | null>(null)
   const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    fetchExpenses()
-    fetchCategories().then(() => checkAndCreateRecurring())
-    fetchExchangeRate()
+    loadData()
   }, [])
 
-  const fetchExpenses = async () => {
-    const { data, error } = await supabase
-      .from('expenses')
-      .select('*')
-      .order('date', { ascending: false })
-      .limit(50)
-
-    if (!error && data) {
-      setExpenses(data)
-    }
-    setIsLoading(false)
-  }
-
-  const fetchCategories = async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('name')
-
-    if (!error && data) {
-      setCategories(data)
+  const loadData = async () => {
+    setIsLoading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await dataFetchExpenses(user.id)
+        await dataFetchCategories(user.id)
+        await checkAndCreateRecurring(user.id)
+      }
+    } catch (error) {
+      console.error('Error loading data:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -67,7 +88,10 @@ export function Dashboard() {
       
       if (error) throw error
       
-      fetchExpenses()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await dataFetchExpenses(user.id)
+      }
       setDeleteModalOpen(false)
       setTransactionToDelete(null)
     } catch (err) {
@@ -76,10 +100,7 @@ export function Dashboard() {
     }
   }
 
-  const checkAndCreateRecurring = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    
+  const checkAndCreateRecurring = async (userId: string) => {
     const currentMonth = new Date().getMonth()
     const currentYear = new Date().getFullYear()
     
@@ -87,7 +108,7 @@ export function Dashboard() {
       .from('expenses')
       .select('*')
       .eq('is_recurring', true)
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
     
     if (!recurringExpenses) return
     
@@ -107,7 +128,7 @@ export function Dashboard() {
         const newDate = new Date(currentYear, currentMonth, Math.min(expenseDate.getDate(), 28))
         
         await supabase.from('expenses').insert({
-          user_id: user.id,
+          user_id: userId,
           description: expense.description,
           amount_cents: expense.amount_cents,
           currency: expense.currency,
@@ -119,23 +140,10 @@ export function Dashboard() {
           is_recurring: true,
           date: newDate.toISOString().split('T')[0],
           status: 'paid',
+          transaction_type: 'expense',
+          is_salary: false
         })
       }
-    }
-  }
-
-  const fetchExchangeRate = async () => {
-    try {
-      const response = await fetch('https://api.bluelytics.com.ar/v2/latest')
-      if (!response.ok) throw new Error('Failed to fetch exchange rate')
-      const data = await response.json()
-      
-      const oficialRate = data.oficial?.value_sell || data.oficial?.value_avg
-      if (oficialRate) {
-        setExchangeRate(oficialRate)
-      }
-    } catch (err) {
-      console.error('Error fetching exchange rate:', err)
     }
   }
 
@@ -143,14 +151,18 @@ export function Dashboard() {
     const headers = ['Fecha', 'Descripción', 'Categoría', 'Monto (ARS)', 'Monto (USD)', 'Método de Pago', 'Tipo']
     const rows = expenses.map(e => {
       const category = categories.find(c => c.id === e.category_id)?.name || 'Sin categoría'
+      let typeLabel = 'Gasto'
+      if (e.transaction_type === 'income') typeLabel = e.is_salary ? 'Salario' : 'Ingreso'
+      if (e.transaction_type === 'savings') typeLabel = 'Ahorro'
+      
       return [
         e.date,
         e.description,
         category,
-        (e.amount_cents / 100).toFixed(2),
+        (Math.abs(e.amount_cents) / 100).toFixed(2),
         ((e.usd_amount_cents || 0) / 100).toFixed(2),
         e.payment_method === 'credit' ? 'Crédito' : 'Débito',
-        e.amount_cents < 0 ? 'Ingreso' : 'Gasto'
+        typeLabel
       ]
     })
     
@@ -171,14 +183,9 @@ export function Dashboard() {
     return expenseDate.getMonth() === selectedMonth && expenseDate.getFullYear() === selectedYear
   })
 
-  const monthlyIncome = monthlyTransactions.filter(t => {
-    const category = categories.find(c => c.id === t.category_id)
-    return t.amount_cents < 0 && category?.type !== 'savings'
-  })
-  const monthlyExpensesList = monthlyTransactions.filter(t => {
-    const category = categories.find(c => c.id === t.category_id)
-    return t.amount_cents > 0 && category?.type !== 'savings'
-  })
+  const monthlyIncome = monthlyTransactions.filter(t => t.transaction_type === 'income')
+  const monthlyExpensesList = monthlyTransactions.filter(t => t.transaction_type === 'expense')
+  const monthlySavings = monthlyTransactions.filter(t => t.transaction_type === 'savings')
 
   const totalIncomeArs = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
   const totalIncomeUsd = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.usd_amount_cents || 0), 0)
@@ -186,10 +193,6 @@ export function Dashboard() {
   const totalExpensesArs = monthlyExpensesList.reduce((sum, t) => sum + t.amount_cents, 0)
   const totalExpensesUsd = monthlyExpensesList.reduce((sum, t) => sum + (t.usd_amount_cents || 0), 0)
   
-  const monthlySavings = monthlyTransactions.filter(t => {
-    const category = categories.find(c => c.id === t.category_id)
-    return category?.type === 'savings'
-  })
   const totalSavingsArs = monthlySavings.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
   const totalSavingsUsd = monthlySavings.reduce((sum, t) => sum + Math.abs(t.usd_amount_cents || 0), 0)
   
@@ -252,6 +255,29 @@ export function Dashboard() {
   }
 
   const groupedExpenses = getGroupedTransactions()
+
+  // Get badge for transaction type
+  const getTransactionBadge = (expense: Expense) => {
+    if (expense.transaction_type === 'income') {
+      return expense.is_salary ? (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success/20 text-success">
+          💰 Salario
+        </span>
+      ) : (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success/20 text-success">
+          📥 Ingreso
+        </span>
+      )
+    }
+    if (expense.transaction_type === 'savings') {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/20 text-primary">
+          💎 Ahorro
+        </span>
+      )
+    }
+    return null
+  }
 
   if (isLoading) {
     return (
@@ -521,20 +547,32 @@ export function Dashboard() {
                     <div className="flex items-center gap-3">
                       {(() => {
                         const category = categories.find(c => c.id === expense.category_id)
+                        // Determine icon and color based on transaction type
+                        let icon = category?.icon || '📦'
+                        let color = category?.color || '#6B7280'
+                        
+                        if (expense.transaction_type === 'income') {
+                          icon = expense.is_salary ? '💰' : '📥'
+                          color = '#10B981'
+                        } else if (expense.transaction_type === 'savings') {
+                          icon = '💎'
+                          color = '#3B82F6'
+                        }
+                        
                         return (
                           <div
                             className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
                             style={{
-                              backgroundColor: category?.color ? `${category.color}30` : 'hsl(var(--muted))',
-                              color: category?.color || 'hsl(var(--muted-foreground))'
+                              backgroundColor: `${color}30`,
+                              color: color
                             }}
                           >
-                            {category?.icon || '📦'}
+                            {icon}
                           </div>
                         )
                       })()}
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium text-foreground">
                             {expense._isInstallmentGroup
                               ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '')
@@ -545,9 +583,16 @@ export function Dashboard() {
                               Cuota {expense.installment_number}/{expense.total_installments}
                             </span>
                           )}
+                          {getTransactionBadge(expense)}
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {(() => {
+                            if (expense.transaction_type === 'income') {
+                              return expense.is_salary ? 'Salario' : 'Ingreso'
+                            }
+                            if (expense.transaction_type === 'savings') {
+                              return 'Ahorro'
+                            }
                             const category = categories.find(c => c.id === expense.category_id)
                             return category?.name || 'Sin categoría'
                           })()} • {new Date(expense.date + 'T12:00:00').toLocaleDateString('es-AR')}
@@ -556,9 +601,10 @@ export function Dashboard() {
                     </div>
                     <div className="text-right">
                       <p className={`font-semibold font-mono-amount ${
-                        expense.amount_cents < 0 ? 'text-success' : 'text-primary'
+                        expense.transaction_type === 'income' ? 'text-success' : 
+                        expense.transaction_type === 'savings' ? 'text-primary' : 'text-destructive'
                       }`}>
-                        {expense.amount_cents < 0 ? '+' : ''}
+                        {expense.transaction_type === 'income' ? '+' : ''}
                         {showUsd 
                           ? formatCurrency(Math.abs(expense.usd_amount_cents || 0), 'USD') 
                           : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
@@ -574,7 +620,7 @@ export function Dashboard() {
           {/* Floating Add Button */}
           <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-20">
             <Button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => setIsTransactionModalOpen(true)}
               size="lg"
               className="w-14 h-14 rounded-full bg-primary hover:opacity-90 text-primary-foreground shadow-lg glow-primary transition-all"
             >
@@ -584,11 +630,10 @@ export function Dashboard() {
 
           {/* Add Transaction Modal */}
           <AddTransactionModal
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
-            onSuccess={fetchExpenses}
+            isOpen={isTransactionModalOpen}
+            onClose={() => setIsTransactionModalOpen(false)}
+            onSuccess={loadData}
             categories={categories}
-            exchangeRate={exchangeRate}
           />
 
           {/* Budget Manager */}

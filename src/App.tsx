@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { supabase } from './services/supabase'
-import { useAppStore } from './stores/appStore'
+import { useUserStore } from './stores/userStore'
+import { useDataStore } from './stores/dataStore'
+import { useUIStore } from './stores/uiStore'
 import { LoginPage } from './pages/LoginPage'
 import { Dashboard } from './pages/Dashboard'
 import { SettingsModal } from './components/SettingsModal'
@@ -8,8 +10,9 @@ import { Button } from './components/ui/button'
 import { Settings } from 'lucide-react'
 
 function App() {
-  const { user, setUser, isLoading, setIsLoading, initializeCategories, isLightMode, reducedMotion } = useAppStore()
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const { user, setUser, isLightMode, reducedMotion } = useUserStore()
+  const { initializeCategories } = useDataStore()
+  const { isSettingsOpen, setIsSettingsOpen, isLoading, setIsLoading } = useUIStore()
 
   useEffect(() => {
     setIsLoading(true)
@@ -20,7 +23,7 @@ function App() {
       console.log('Dev bypass user found')
       setUser(JSON.parse(devBypassUser))
       setIsLoading(false)
-      initializeCategories()
+      initializeCategories(JSON.parse(devBypassUser).id)
       return
     }
     
@@ -37,7 +40,9 @@ function App() {
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         setIsLoading(false)
         // Initialize categories for both new sign-ins and existing sessions
-        initializeCategories()
+        if (session?.user) {
+          initializeCategories(session.user.id)
+        }
       }
     })
 
@@ -51,6 +56,9 @@ function App() {
         console.log('Initial session check:', session?.user?.email ?? 'none')
         setUser(session?.user ?? null)
         setIsLoading(false)
+        if (session?.user) {
+          initializeCategories(session.user.id)
+        }
       })
     } else {
       // Wait for Supabase to parse the hash (max 3 seconds)
@@ -65,6 +73,7 @@ function App() {
   const handleLogout = async () => {
     // Clear dev bypass user if present
     localStorage.removeItem('devBypassUser')
+    setUser(null)
     await supabase.auth.signOut()
   }
 
