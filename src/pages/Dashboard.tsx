@@ -66,12 +66,16 @@ export function Dashboard() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
+        console.log('Loading data for user:', user.id)
         await dataFetchExpenses(user.id)
         await dataFetchCategories(user.id)
         await checkAndCreateRecurring(user.id)
+      } else {
+        console.log('No user found, skipping data load')
       }
     } catch (error) {
       console.error('Error loading data:', error)
+      alert('Error al cargar datos. Por favor recarga la página.')
     } finally {
       setIsLoading(false)
     }

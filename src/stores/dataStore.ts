@@ -66,23 +66,27 @@ export const useDataStore = create<DataState>()((set, get) => ({
   // Fetch operations
   fetchExpenses: async (userId) => {
     try {
+      console.log('Fetching expenses for user:', userId)
       const expenses = await apiFetchExpenses(userId)
-      set({ expenses })
+      console.log('Fetched expenses:', expenses?.length || 0)
+      set({ expenses: expenses || [] })
     } catch (error) {
       console.error('Error fetching expenses:', error)
       showErrorAlert(error, 'Error al cargar transacciones')
-      throw error
+      set({ expenses: [] })
     }
   },
   
   fetchCategories: async (userId) => {
     try {
+      console.log('Fetching categories for user:', userId)
       const categories = await apiFetchCategories(userId)
-      set({ categories })
+      console.log('Fetched categories:', categories?.length || 0)
+      set({ categories: categories || [] })
     } catch (error) {
       console.error('Error fetching categories:', error)
       showErrorAlert(error, 'Error al cargar categorías')
-      throw error
+      set({ categories: [] })
     }
   },
   
