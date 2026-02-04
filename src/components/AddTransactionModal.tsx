@@ -135,7 +135,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
             currency: 'ARS',
             exchangeRate,
             usdAmountCents,
-            categoryId,
+            categoryId: categoryId || null,
             installmentCount: installments,
             baseDate: selectedDate,
             billingDay: billingDayFromSettings
@@ -151,7 +151,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
             usd_amount_cents: usdAmountCents,
             original_currency: currency === 'USD' ? 'USD' : undefined,
             original_amount_cents: originalAmountCents,
-            category_id: categoryId,
+            category_id: categoryId || null,
             payment_method: paymentMethod,
             is_recurring: isRecurring,
             date: selectedDate,
