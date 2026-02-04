@@ -71,6 +71,17 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
     const amountCents = Math.round(parseFloat(editAmount) * 100)
     const usdAmountCents = Math.round(amountCents / expense.exchange_rate)
     
+    // Validate amount doesn't exceed PostgreSQL integer limit
+    const MAX_INT = 2147483647
+    if (amountCents > MAX_INT || amountCents < -MAX_INT) {
+      alert('El monto es demasiado grande. El mÃ¡ximo permitido es aproximadamente $21,474,836 ARS')
+      return
+    }
+    if (usdAmountCents > MAX_INT || usdAmountCents < -MAX_INT) {
+      alert('El monto es demasiado grande. El mÃ¡ximo permitido es aproximadamente $21,474,836 USD')
+      return
+    }
+    
     setIsLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()

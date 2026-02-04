@@ -128,6 +128,19 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           originalAmountCents = undefined
         }
 
+        // Validate amount doesn't exceed PostgreSQL integer limit (2,147,483,647)
+        const MAX_INT = 2147483647
+        if (amountCents > MAX_INT || amountCents < -MAX_INT) {
+          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
+          setIsLoading(false)
+          return
+        }
+        if (usdAmountCents > MAX_INT || usdAmountCents < -MAX_INT) {
+          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
+          setIsLoading(false)
+          return
+        }
+
         if (paymentMethod === 'credit' && installments > 1) {
           // Use stored procedure for installments
           const savedBillingDay = localStorage.getItem('defaultBillingDay')
@@ -175,7 +188,20 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
         // Handle income
         const amountCents = Math.round(rawAmount * 100)
         const usdAmountCents = Math.round(amountCents / exchangeRate)
-        
+
+        // Validate amount doesn't exceed PostgreSQL integer limit
+        const MAX_INT = 2147483647
+        if (amountCents > MAX_INT || amountCents < -MAX_INT) {
+          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
+          setIsLoading(false)
+          return
+        }
+        if (usdAmountCents > MAX_INT || usdAmountCents < -MAX_INT) {
+          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
+          setIsLoading(false)
+          return
+        }
+
         await addExpense({
           user_id: user.id,
           description,
@@ -201,7 +227,20 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
         // Handle savings
         const amountCents = Math.round(rawAmount * 100)
         const usdAmountCents = Math.round(amountCents / exchangeRate)
-        
+
+        // Validate amount doesn't exceed PostgreSQL integer limit
+        const MAX_INT = 2147483647
+        if (amountCents > MAX_INT || amountCents < -MAX_INT) {
+          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
+          setIsLoading(false)
+          return
+        }
+        if (usdAmountCents > MAX_INT || usdAmountCents < -MAX_INT) {
+          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
+          setIsLoading(false)
+          return
+        }
+
         await addExpense({
           user_id: user.id,
           description,
