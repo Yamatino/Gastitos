@@ -19,7 +19,8 @@ export function Dashboard() {
     showUsd, 
     toggleShowUsd, 
     hideTotalAmount, 
-    toggleHideTotalAmount
+    toggleHideTotalAmount,
+    exchangeRate
   } = useUserStore()
   
   // Data store
@@ -207,16 +208,16 @@ export function Dashboard() {
   const monthlySavings = monthlyTransactions.filter(t => t.transaction_type === 'savings')
 
   const totalIncomeArs = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
-  const totalIncomeUsd = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.usd_amount_cents || 0), 0)
+  const totalIncomeUsd = Math.round(totalIncomeArs / exchangeRate)
   
   const totalExpensesArs = monthlyExpensesList.reduce((sum, t) => sum + t.amount_cents, 0)
-  const totalExpensesUsd = monthlyExpensesList.reduce((sum, t) => sum + (t.usd_amount_cents || 0), 0)
+  const totalExpensesUsd = Math.round(totalExpensesArs / exchangeRate)
   
   const totalSavingsArs = monthlySavings.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
-  const totalSavingsUsd = monthlySavings.reduce((sum, t) => sum + Math.abs(t.usd_amount_cents || 0), 0)
+  const totalSavingsUsd = Math.round(totalSavingsArs / exchangeRate)
   
   const balanceArs = totalIncomeArs - totalExpensesArs - totalSavingsArs
-  const balanceUsd = totalIncomeUsd - totalExpensesUsd - totalSavingsUsd
+  const balanceUsd = Math.round(balanceArs / exchangeRate)
 
   const pendingCuotas = expenses.filter(e => 
     e.is_installment && 
@@ -255,7 +256,6 @@ export function Dashboard() {
     return Array.from(grouped.values()).map(group => {
       if (group._isGrouped) {
         const total = group._installments.reduce((sum: number, inst: Expense) => sum + inst.amount_cents, 0)
-        const totalUsd = group._installments.reduce((sum: number, inst: Expense) => sum + (inst.usd_amount_cents || 0), 0)
         const nextPending = group._installments
           .filter((inst: Expense) => inst.status === 'pending')
           .sort((a: Expense, b: Expense) => new Date(a.date + 'T12:00:00').getTime() - new Date(b.date + 'T12:00:00').getTime())[0]
@@ -263,7 +263,6 @@ export function Dashboard() {
         return {
           ...group,
           amount_cents: total,
-          usd_amount_cents: totalUsd,
           _displayText: `Cuota ${group.installment_number}/${group.total_installments}`,
           _nextPendingDate: nextPending?.date,
           _isInstallmentGroup: true
@@ -625,7 +624,7 @@ export function Dashboard() {
                       }`}>
                         {expense.transaction_type === 'income' ? '+' : ''}
                         {showUsd 
-                          ? formatCurrency(Math.abs(expense.usd_amount_cents || 0), 'USD') 
+                          ? formatCurrency(Math.round(Math.abs(expense.amount_cents) / exchangeRate), 'USD') 
                           : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
                         }
                       </p>
