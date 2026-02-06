@@ -106,7 +106,7 @@ export const useUserStore = create<UserState>()(
         hideTotalAmount: state.hideTotalAmount,
         monthlySavingsGoalUSD: state.monthlySavingsGoalUSD,
         budgets: state.budgets,
-        exchangeRate: state.exchangeRate,
+        // Note: exchangeRate is NOT persisted - always fetched from API on load
       }),
     }
   )
