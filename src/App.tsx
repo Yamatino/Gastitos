@@ -3,6 +3,7 @@ import { supabase } from './services/supabase'
 import { useUserStore } from './stores/userStore'
 import { useDataStore } from './stores/dataStore'
 import { useUIStore } from './stores/uiStore'
+import { fetchExchangeRate } from './lib/api'
 import { LoginPage } from './pages/LoginPage'
 import { Dashboard } from './pages/Dashboard'
 import { SettingsModal } from './components/SettingsModal'
@@ -10,7 +11,7 @@ import { Button } from './components/ui/button'
 import { Settings } from 'lucide-react'
 
 function App() {
-  const { user, setUser, isLightMode, reducedMotion } = useUserStore()
+  const { user, setUser, isLightMode, reducedMotion, setExchangeRate } = useUserStore()
   const { initializeCategories } = useDataStore()
   const { isSettingsOpen, setIsSettingsOpen, isLoading, setIsLoading } = useUIStore()
   const categoriesInitializedForUser = useRef<string | null>(null)
@@ -72,6 +73,19 @@ function App() {
     }
 
     return () => subscription.unsubscribe()
+  }, [])
+
+  // Fetch exchange rate on app load
+  useEffect(() => {
+    const loadExchangeRate = async () => {
+      try {
+        const rate = await fetchExchangeRate()
+        setExchangeRate(rate)
+      } catch (error) {
+        console.error('Failed to load exchange rate:', error)
+      }
+    }
+    loadExchangeRate()
   }, [])
 
   const handleLogout = async () => {
