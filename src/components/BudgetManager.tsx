@@ -100,6 +100,7 @@ export function BudgetManager({ isOpen, onClose }: BudgetManagerProps) {
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
                 <Input
                   type="number"
+                  inputMode="decimal"
                   step="0.01"
                   value={budgetAmount}
                   onChange={(e) => setBudgetAmount(e.target.value)}

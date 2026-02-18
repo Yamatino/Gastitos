@@ -207,6 +207,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-semibold">US$</span>
                     <Input
                       type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       step="1"
                       value={savingsGoalInput}
                       onChange={(e) => setSavingsGoalInput(e.target.value)}

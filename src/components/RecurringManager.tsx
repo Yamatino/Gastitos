@@ -188,6 +188,7 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
                       <span className="text-gray-500">$</span>
                       <Input
                         type="number"
+                        inputMode="decimal"
                         step="0.01"
                         value={editAmount}
                         onChange={(e) => setEditAmount(e.target.value)}
