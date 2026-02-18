@@ -139,14 +139,14 @@ export async function createInstallments(
     return supabase.rpc('create_installments', {
       p_user_id: userId,
       p_description: description,
-      p_amount_cents: amountCents,
+      p_amount_cents: Math.round(amountCents),
       p_currency: currency,
-      p_exchange_rate: exchangeRate,
-      p_usd_amount_cents: usdAmountCents,
+      p_exchange_rate: Math.round(exchangeRate),
+      p_usd_amount_cents: Math.round(usdAmountCents),
       p_category_id: categoryId,
-      p_installment_count: installmentCount,
+      p_installment_count: Math.round(installmentCount),
       p_base_date: baseDate,
-      p_billing_day: billingDay
+      p_billing_day: Math.round(billingDay)
     });
   });
 }
