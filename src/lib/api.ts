@@ -134,27 +134,25 @@ export async function createInstallments(
   installmentCount: number,
   baseDate: string,
   billingDay: number
-) {
-  return queryWithTimeout(async () => {
-    const params = {
-      p_user_id: userId,
-      p_description: description,
-      p_amount_cents: Math.round(amountCents),
-      p_currency: currency,
-      p_exchange_rate: Math.round(exchangeRate),
-      p_usd_amount_cents: Math.round(usdAmountCents),
-      p_category_id: categoryId,
-      p_installment_count: Math.round(installmentCount),
-      p_base_date: baseDate,
-      p_billing_day: Math.round(billingDay)
-    };
-    console.log('Creating installments with params:', params);
-    const result = await supabase.rpc('create_installments', params);
-    if (result.error) {
-      console.error('create_installments error details:', result.error);
-    }
-    return result;
-  });
+): Promise<void> {
+  const params = {
+    p_user_id: userId,
+    p_description: description,
+    p_amount_cents: Math.round(amountCents),
+    p_currency: currency,
+    p_exchange_rate: Math.round(exchangeRate),
+    p_usd_amount_cents: Math.round(usdAmountCents),
+    p_category_id: categoryId,
+    p_installment_count: Math.round(installmentCount),
+    p_base_date: baseDate,
+    p_billing_day: Math.round(billingDay)
+  };
+  console.log('Creating installments with params:', params);
+  const result = await supabase.rpc('create_installments', params);
+  if (result.error) {
+    console.error('create_installments error details:', result.error);
+    throw handleSupabaseError(result.error, 'create_installments');
+  }
 }
 
 // Create category
