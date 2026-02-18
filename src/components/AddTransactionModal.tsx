@@ -394,7 +394,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
                   <Input
                     type="text"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     value={amount}
                     onChange={(e) => {
                       const rawValue = e.target.value.replace(/[^\d]/g, '')
