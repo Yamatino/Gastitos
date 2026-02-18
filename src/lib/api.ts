@@ -136,7 +136,7 @@ export async function createInstallments(
   billingDay: number
 ) {
   return queryWithTimeout(async () => {
-    return supabase.rpc('create_installments', {
+    const params = {
       p_user_id: userId,
       p_description: description,
       p_amount_cents: Math.round(amountCents),
@@ -147,7 +147,13 @@ export async function createInstallments(
       p_installment_count: Math.round(installmentCount),
       p_base_date: baseDate,
       p_billing_day: Math.round(billingDay)
-    });
+    };
+    console.log('Creating installments with params:', params);
+    const result = await supabase.rpc('create_installments', params);
+    if (result.error) {
+      console.error('create_installments error details:', result.error);
+    }
+    return result;
   });
 }
 
