@@ -381,22 +381,31 @@ export function Dashboard() {
             </div>
             
             {/* Income vs Expenses */}
-            <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border">
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground mb-1">Ingresos</p>
-                <p className="text-base font-semibold text-success font-mono-amount">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-border">
+              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-success/10 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-success"></span>
+                  <p className="text-sm sm:text-xs text-muted-foreground">Ingresos</p>
+                </div>
+                <p className="text-lg sm:text-base font-semibold text-success font-mono-amount">
                   {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalIncomeUsd, 'USD') : formatCurrency(totalIncomeArs, 'ARS'))}
                 </p>
               </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground mb-1">Gastos</p>
-                <p className="text-base font-semibold text-destructive font-mono-amount">
+              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-destructive/10 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-destructive"></span>
+                  <p className="text-sm sm:text-xs text-muted-foreground">Gastos</p>
+                </div>
+                <p className="text-lg sm:text-base font-semibold text-destructive font-mono-amount">
                   {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalExpensesUsd, 'USD') : formatCurrency(totalExpensesArs, 'ARS'))}
                 </p>
               </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground mb-1">Ahorro</p>
-                <p className="text-base font-semibold text-primary font-mono-amount">
+              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-primary/10 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary"></span>
+                  <p className="text-sm sm:text-xs text-muted-foreground">Ahorro</p>
+                </div>
+                <p className="text-lg sm:text-base font-semibold text-primary font-mono-amount">
                   {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalSavingsUsd, 'USD') : formatCurrency(totalSavingsArs, 'ARS'))}
                 </p>
               </div>

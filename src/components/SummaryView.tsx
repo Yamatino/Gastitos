@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   LineChart, Line
 } from 'recharts'
-import { CreditCard, TrendingUp, Trash2, Package } from 'lucide-react'
+import { CreditCard, TrendingUp, Trash2, Package, Repeat, CalendarDays, PiggyBank } from 'lucide-react'
 import { fetchInflationData, type ProcessedInflation } from '../services/inflation'
 
 export function SummaryView() {
@@ -203,11 +203,43 @@ export function SummaryView() {
 
   return (
     <div className="space-y-6 pb-20">
-      {/* Total Debt Card */}
+      {/* Monthly Recurring Expenses Card */}
+      {(() => {
+        const currentDate = new Date()
+        const currentMonth = currentDate.getMonth()
+        const currentYear = currentDate.getFullYear()
+        
+        const monthlyRecurring = expenses.filter(e => 
+          e.is_recurring && 
+          !e.is_installment &&
+          new Date(e.date + 'T12:00:00').getMonth() === currentMonth &&
+          new Date(e.date + 'T12:00:00').getFullYear() === currentYear
+        )
+        
+        const totalRecurring = monthlyRecurring.reduce((sum, e) => sum + e.amount_cents, 0)
+        const totalRecurringUsd = monthlyRecurring.reduce((sum, e) => sum + (e.usd_amount_cents || 0), 0)
+        
+        return (
+          <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-6 text-white">
+            <div className="flex items-center gap-2 mb-4">
+              <Repeat className="w-6 h-6" />
+              <h2 className="text-lg font-semibold">Gasto Recurrente Mensual</h2>
+            </div>
+            <div className="text-3xl font-bold mb-3">
+              {showUsd ? formatCurrency(totalRecurringUsd, 'USD') : formatCurrency(totalRecurring, 'ARS')}
+            </div>
+            <div className="bg-white/20 rounded-lg px-3 py-2 text-sm">
+              <span className="opacity-80">{monthlyRecurring.length} pagos recurrentes este mes</span>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Total Debt Card (Cuotas) */}
       <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-2xl p-6 text-white">
         <div className="flex items-center gap-2 mb-4">
           <CreditCard className="w-6 h-6" />
-          <h2 className="text-lg font-semibold">Deuda Total Pendiente</h2>
+          <h2 className="text-lg font-semibold">Deuda Total Pendiente (Cuotas)</h2>
         </div>
         <div className="text-3xl font-bold mb-3">
           {showUsd ? formatCurrency(totalDebtUsd, 'USD') : formatCurrency(totalDebt, 'ARS')}
@@ -230,31 +262,31 @@ export function SummaryView() {
 
       {/* Inflation Card */}
       {inflationData?.latest && (
-        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-6 text-white">
+        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-4 sm:p-6 text-white">
           <div className="flex items-center gap-2 mb-4">
             <div className="bg-white/20 p-2 rounded-lg">
               <span className="text-xl">📈</span>
             </div>
-            <h2 className="text-lg font-semibold">Inflación Oficial</h2>
+            <h2 className="text-base sm:text-lg font-semibold">Inflación Oficial</h2>
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <div>
-              <div className="text-3xl font-bold">
+              <div className="text-2xl sm:text-3xl font-bold">
                 {inflationData.latest.valor.toFixed(1)}%
               </div>
-              <p className="text-sm opacity-90 mt-1">
+              <p className="text-xs sm:text-sm opacity-90 mt-1">
                 {new Date(inflationData.latest.fecha).toLocaleDateString('es-AR', { 
-                  month: 'long', 
+                  month: 'short', 
                   year: 'numeric' 
                 })}
               </p>
             </div>
             <div>
-              <div className="text-3xl font-bold">
+              <div className="text-2xl sm:text-3xl font-bold">
                 {inflationData.cumulativeSixMonths.toFixed(1)}%
               </div>
-              <p className="text-sm opacity-90 mt-1">
+              <p className="text-xs sm:text-sm opacity-90 mt-1">
                 Acumulado 6 meses
               </p>
             </div>
@@ -266,20 +298,131 @@ export function SummaryView() {
         </div>
       )}
 
+      {/* Savings Rate and 3-Month Debt Cards */}
+      {(() => {
+        // Calculate current month totals
+        const currentDate = new Date()
+        const currentMonth = currentDate.getMonth()
+        const currentYear = currentDate.getFullYear()
+        
+        const currentMonthData = last6Months[last6Months.length - 1]
+        const totalIncome = (currentMonthData?.income || 0) * 100
+        const totalSavings = expenses
+          .filter(e => {
+            const date = new Date(e.date + 'T12:00:00')
+            return date.getMonth() === currentMonth && 
+                   date.getFullYear() === currentYear && 
+                   e.transaction_type === 'savings'
+          })
+          .reduce((sum, e) => sum + Math.abs(e.amount_cents), 0)
+        
+        const savingsRate = totalIncome > 0 ? (totalSavings / totalIncome) * 100 : 0
+        
+        // Calculate 3-month debt
+        const pendingInstallments = expenses.filter(e => 
+          e.is_installment && e.status === 'pending'
+        )
+        
+        let month1Debt = 0, month2Debt = 0, month3Debt = 0
+        
+        pendingInstallments.forEach(e => {
+          const date = new Date(e.date + 'T12:00:00')
+          const month = date.getMonth()
+          const year = date.getFullYear()
+          
+          if (year === currentYear && month === currentMonth) {
+            month1Debt += e.amount_cents
+          } else if ((year === currentYear && month === currentMonth + 1) || 
+                     (year === currentYear + 1 && currentMonth === 11 && month === 0)) {
+            month2Debt += e.amount_cents
+          } else if ((year === currentYear && month === currentMonth + 2) || 
+                     (year === currentYear + 1 && currentMonth === 10 && month === 0) ||
+                     (year === currentYear + 1 && currentMonth === 11 && month === 1)) {
+            month3Debt += e.amount_cents
+          }
+        })
+        
+        const total3MonthDebt = month1Debt + month2Debt + month3Debt
+        const total3MonthDebtUsd = total3MonthDebt * (exchangeRate / 100) / 100
+        
+        const monthNames = [
+          new Date(currentYear, currentMonth).toLocaleDateString('es-AR', { month: 'short' }),
+          new Date(currentYear, currentMonth + 1).toLocaleDateString('es-AR', { month: 'short' }),
+          new Date(currentYear, currentMonth + 2).toLocaleDateString('es-AR', { month: 'short' })
+        ]
+        
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Savings Rate Card */}
+            <div className={`rounded-2xl p-6 text-white ${
+              savingsRate >= 20 ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' :
+              savingsRate >= 10 ? 'bg-gradient-to-br from-amber-500 to-orange-500' :
+              'bg-gradient-to-br from-red-500 to-red-600'
+            }`}>
+              <div className="flex items-center gap-2 mb-4">
+                <PiggyBank className="w-6 h-6" />
+                <h2 className="text-lg font-semibold">Tasa de Ahorro</h2>
+              </div>
+              <div className="text-3xl font-bold mb-2">
+                {savingsRate.toFixed(1)}%
+              </div>
+              <div className="bg-white/20 rounded-lg px-3 py-2 text-sm">
+                <span className="opacity-80">
+                  {savingsRate >= 20 ? '¡Excelente! Estás ahorrando muy bien' :
+                   savingsRate >= 10 ? 'Bien, pero podrías ahorrar más' :
+                   'Alerta: Ahorro muy bajo'}
+                </span>
+              </div>
+            </div>
+
+            {/* Upcoming 3 Month Debt Card */}
+            <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-6 text-white">
+              <div className="flex items-center gap-2 mb-4">
+                <CalendarDays className="w-6 h-6" />
+                <h2 className="text-lg font-semibold">Deuda Próximos 3 Meses</h2>
+              </div>
+              <div className="text-3xl font-bold mb-3">
+                {showUsd ? formatCurrency(total3MonthDebtUsd, 'USD') : formatCurrency(total3MonthDebt, 'ARS')}
+              </div>
+              <div className="flex flex-col gap-2 text-sm">
+                <div className="bg-white/20 rounded-lg px-3 py-1 flex justify-between">
+                  <span className="opacity-80">{monthNames[0]}:</span>
+                  <span className="font-semibold">
+                    {showUsd ? formatCurrency(month1Debt * (exchangeRate / 100) / 100, 'USD') : formatCurrency(month1Debt, 'ARS')}
+                  </span>
+                </div>
+                <div className="bg-white/20 rounded-lg px-3 py-1 flex justify-between">
+                  <span className="opacity-80">{monthNames[1]}:</span>
+                  <span className="font-semibold">
+                    {showUsd ? formatCurrency(month2Debt * (exchangeRate / 100) / 100, 'USD') : formatCurrency(month2Debt, 'ARS')}
+                  </span>
+                </div>
+                <div className="bg-white/20 rounded-lg px-3 py-1 flex justify-between">
+                  <span className="opacity-80">{monthNames[2]}:</span>
+                  <span className="font-semibold">
+                    {showUsd ? formatCurrency(month3Debt * (exchangeRate / 100) / 100, 'USD') : formatCurrency(month3Debt, 'ARS')}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Monthly Comparison Chart */}
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
         <h3 className="text-lg font-semibold text-gray-700 mb-4">Ingresos vs Gastos (Últimos 6 meses)</h3>
-        <div className="h-64">
+        <div className="h-48 sm:h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={last6Months}>
+            <BarChart data={last6Months} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
-              <YAxis stroke="#6b7280" fontSize={12} />
+              <XAxis dataKey="name" stroke="#6b7280" fontSize={10} tickMargin={5} />
+              <YAxis stroke="#6b7280" fontSize={10} width={40} />
               <Tooltip 
                 formatter={(value) => formatCurrency((value as number) * 100, 'ARS')}
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
               />
-              <Legend />
+              <Legend wrapperStyle={{ fontSize: '12px' }} />
               <Bar dataKey="income" name="Ingresos" fill="#10b981" radius={[4, 4, 0, 0]} />
               <Bar dataKey="expenses" name="Gastos" fill="#ef4444" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -287,21 +430,21 @@ export function SummaryView() {
         </div>
       </div>
 
-      {/* Top Categories & Daily Trend */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Top Categories & Financial Insights */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Top Categories Pie Chart */}
-        <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">Gastos por Categoría</h3>
-          <div className="h-64">
+        <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-violet-100">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-4">Gastos por Categoría</h3>
+          <div className="h-56 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={topCategories}
                   cx="50%"
-                  cy="50%"
+                  cy="45%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
-                  outerRadius={80}
+                  label={({ percent }) => `${((percent || 0) * 100).toFixed(0)}%`}
+                  outerRadius={60}
                   fill="#8884d8"
                   dataKey="value"
                 >
@@ -313,11 +456,20 @@ export function SummaryView() {
               </PieChart>
             </ResponsiveContainer>
           </div>
+          {/* Category legend for mobile */}
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:hidden">
+            {topCategories.map((cat, idx) => (
+              <div key={idx} className="flex items-center gap-2 text-xs">
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }}></span>
+                <span className="text-gray-600 truncate">{cat.name}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Financial Insights */}
-        <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
-          <h3 className="text-lg font-semibold text-gray-700 mb-4">Estado Financiero</h3>
+        <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-violet-100">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-4">Estado Financiero</h3>
           
           {/* Status Indicator */}
           <div className="mb-6">
@@ -426,12 +578,12 @@ export function SummaryView() {
         const cumulativeInflation = inflationData.cumulativeSixMonths
         
         return (
-          <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
+          <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-violet-100">
             <div className="flex items-center gap-2 mb-4">
               <div className="bg-amber-100 p-2 rounded-lg">
                 <span className="text-xl">💸</span>
               </div>
-              <h3 className="text-lg font-semibold text-gray-700">Impacto en tu Poder Adquisitivo</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-gray-700">Impacto en tu Poder Adquisitivo</h3>
             </div>
             
             <div className="space-y-4">
@@ -479,14 +631,14 @@ export function SummaryView() {
       })()}
 
       {/* Daily Spending Trend */}
-      <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
-        <h3 className="text-lg font-semibold text-gray-700 mb-4">Tendencia de Gastos (Últimos 30 días)</h3>
-        <div className="h-48">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-violet-100">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-4">Tendencia de Gastos (Últimos 30 días)</h3>
+        <div className="h-40 sm:h-48">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={last30Days}>
+            <LineChart data={last30Days} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="day" stroke="#6b7280" fontSize={10} />
-              <YAxis stroke="#6b7280" fontSize={10} />
+              <XAxis dataKey="day" stroke="#6b7280" fontSize={9} interval={4} tickMargin={5} />
+              <YAxis stroke="#6b7280" fontSize={10} width={40} />
               <Tooltip 
                 formatter={(value) => formatCurrency((value as number) * 100, 'ARS')}
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
@@ -504,8 +656,8 @@ export function SummaryView() {
       </div>
 
       {/* Top 5 Expenses */}
-      <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
-        <h3 className="text-lg font-semibold text-gray-700 mb-4">Top 5 Gastos del Mes</h3>
+      <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-violet-100">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-4">Top 5 Gastos del Mes</h3>
         <div className="space-y-3">
           {expenses
             .filter(e => {
@@ -554,7 +706,7 @@ export function SummaryView() {
 
       {/* All Active Installments */}
       {activeInstallmentGroups.length > 0 && (
-        <div className="bg-white rounded-2xl p-6 shadow-lg border border-violet-100">
+        <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-violet-100">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Package className="w-5 h-5 text-violet-600" />
