@@ -7,7 +7,7 @@ const MAX_RETRIES = 3;
 
 // Wrapper for Supabase queries with timeout and retry
 export async function queryWithTimeout<T>(
-  queryFn: () => Promise<{ data: T | null; error: any }>,
+  queryFn: () => Promise<{ data: T | null; error: unknown }>,
   timeoutMs: number = DEFAULT_TIMEOUT
 ): Promise<T> {
   return withRetry(async () => {

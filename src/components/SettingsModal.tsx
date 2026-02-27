@@ -70,7 +70,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
     try {
       await removeCategory(id)
-    } catch (err) {
+    } catch {
       // Error is already shown via alert in the store
     }
   }

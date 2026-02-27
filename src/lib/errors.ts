@@ -75,13 +75,21 @@ export function getErrorMessage(code: string): string {
   return errorMessages[code] || errorMessages[ErrorCodes.UNKNOWN_ERROR];
 }
 
+// Interface for PostgREST/Supabase errors
+interface PostgrestError {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}
+
 // Convert Supabase/Postgrest errors to AppError
 export function handleSupabaseError(error: unknown, context: string): AppError {
   console.error(`Error in ${context}:`, error);
   
   // Handle PostgREST errors
   if (error && typeof error === 'object') {
-    const pgError = error as any;
+    const pgError = error as PostgrestError;
     
     // Check for specific PostgreSQL error codes
     if (pgError.code) {

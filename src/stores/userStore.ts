@@ -77,6 +77,7 @@ export const useUserStore = create<UserState>()(
         budgets: { ...state.budgets, [categoryId]: amount }
       })),
       removeBudget: (categoryId) => set((state) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { [categoryId]: _, ...rest } = state.budgets
         return { budgets: rest }
       }),

@@ -8,7 +8,9 @@ describe('Utility Functions', () => {
     })
 
     it('handles conditional classes', () => {
-      expect(cn('base', false && 'hidden', true && 'visible')).toBe('base visible')
+      const isVisible = true
+      const isHidden = false
+      expect(cn('base', isHidden && 'hidden', isVisible && 'visible')).toBe('base visible')
     })
 
     it('handles Tailwind conflicts', () => {
