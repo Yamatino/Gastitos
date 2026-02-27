@@ -160,7 +160,16 @@ export function SummaryView() {
     const sorted = items.sort((a: Expense, b: Expense) => (a.installment_number || 0) - (b.installment_number || 0))
     const first = sorted[0]
     const totalInstallments = first.total_installments || sorted.length
-    const paidCount = sorted.filter((e: Expense) => e.status === 'paid').length
+    
+    // Calculate paid count based on status OR if the installment date has passed
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const paidCount = sorted.filter((e: Expense) => {
+      if (e.status === 'paid') return true
+      const installmentDate = new Date(e.date + 'T12:00:00')
+      return installmentDate < today
+    }).length
+    
     const currentNumber = paidCount + 1
     const totalAmount = sorted.reduce((sum: number, e: Expense) => sum + e.amount_cents, 0)
     const remainingAmount = sorted
