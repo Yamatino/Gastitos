@@ -219,9 +219,13 @@ export function Dashboard() {
   const balanceArs = totalIncomeArs - totalExpensesArs - totalSavingsArs
   const balanceUsd = Math.round(balanceArs / exchangeRate)
 
-  const pendingCuotas = expenses.filter(e => 
-    e.is_installment && 
-    e.status === 'pending'
+  // Count unique installment groups with pending installments
+  const pendingCuotas = Array.from(
+    new Set(
+      expenses
+        .filter(e => e.is_installment && e.status === 'pending')
+        .map(e => e.installment_group_id)
+    )
   )
 
   const filteredExpenses = searchQuery
