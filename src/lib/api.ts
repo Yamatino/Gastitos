@@ -63,7 +63,7 @@ export async function fetchExpenses(
     ascending?: boolean;
   } = {}
 ) {
-  const { limit = 50, offset = 0, orderBy = 'date', ascending = false } = options;
+  const { limit = 1000, offset = 0, orderBy = 'date', ascending = false } = options;
   
   return queryWithTimeout(async () => {
     return supabase
