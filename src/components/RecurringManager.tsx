@@ -43,15 +43,16 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
       if (!user) throw new Error('No user')
       
       const today = new Date().toISOString().split('T')[0]
-      console.log('Today:', today, 'Description:', expense.description, 'Category:', expense.category_id)
+      console.log('Today:', today, 'Expense date:', expense.date, 'Description:', expense.description, 'Category:', expense.category_id)
       
+      // Delete this expense and all future instances
       let query = supabase
         .from('expenses')
         .delete()
         .eq('user_id', user.id)
         .eq('description', expense.description)
         .eq('is_recurring', true)
-        .gte('date', today)
+        .gte('date', expense.date)
       
       // Handle null category_id properly
       if (expense.category_id === null) {
@@ -107,9 +108,7 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user')
       
-      const today = new Date().toISOString().split('T')[0]
-      
-      // Update the template and all future instances
+      // Update this expense and all future instances
       let query = supabase
         .from('expenses')
         .update({ 
@@ -119,7 +118,7 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
         .eq('user_id', user.id)
         .eq('description', expense.description)
         .eq('is_recurring', true)
-        .gte('date', today)
+        .gte('date', expense.date)
       
       // Handle null category_id properly
       if (expense.category_id === null) {
