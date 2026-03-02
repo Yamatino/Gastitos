@@ -36,9 +36,14 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
     
     setIsLoading(true)
     try {
+      console.log('Attempting to delete expense:', expense)
+      
       // Delete all future instances of this recurring expense
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user')
+      
+      const today = new Date().toISOString().split('T')[0]
+      console.log('Today:', today, 'Description:', expense.description, 'Category:', expense.category_id)
       
       let query = supabase
         .from('expenses')
@@ -46,16 +51,19 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
         .eq('user_id', user.id)
         .eq('description', expense.description)
         .eq('is_recurring', true)
-        .gte('date', new Date().toISOString().split('T')[0])
+        .gte('date', today)
       
       // Handle null category_id properly
       if (expense.category_id === null) {
         query = query.is('category_id', null)
+        console.log('Using IS NULL for category_id')
       } else {
         query = query.eq('category_id', expense.category_id)
+        console.log('Using eq for category_id:', expense.category_id)
       }
       
-      const { error } = await query
+      const { error, count } = await query
+      console.log('Delete result - error:', error, 'count:', count)
       if (error) throw error
       
       // Refresh expenses
@@ -93,8 +101,13 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
     
     setIsLoading(true)
     try {
+      console.log('Attempting to edit expense:', expense)
+      console.log('New amount:', amountCents, 'usd:', usdAmountCents)
+      
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user')
+      
+      const today = new Date().toISOString().split('T')[0]
       
       // Update the template and all future instances
       let query = supabase
@@ -106,16 +119,19 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
         .eq('user_id', user.id)
         .eq('description', expense.description)
         .eq('is_recurring', true)
-        .gte('date', new Date().toISOString().split('T')[0])
+        .gte('date', today)
       
       // Handle null category_id properly
       if (expense.category_id === null) {
         query = query.is('category_id', null)
+        console.log('Using IS NULL for category_id')
       } else {
         query = query.eq('category_id', expense.category_id)
+        console.log('Using eq for category_id:', expense.category_id)
       }
       
-      const { error } = await query
+      const { error, count } = await query
+      console.log('Update result - error:', error, 'count:', count)
       if (error) throw error
       
       setEditingId(null)
