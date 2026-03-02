@@ -40,14 +40,23 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user')
       
-      await supabase
+      let query = supabase
         .from('expenses')
         .delete()
         .eq('user_id', user.id)
         .eq('description', expense.description)
-        .eq('category_id', expense.category_id)
         .eq('is_recurring', true)
         .gte('date', new Date().toISOString().split('T')[0])
+      
+      // Handle null category_id properly
+      if (expense.category_id === null) {
+        query = query.is('category_id', null)
+      } else {
+        query = query.eq('category_id', expense.category_id)
+      }
+      
+      const { error } = await query
+      if (error) throw error
       
       // Refresh expenses
       const { data } = await supabase
@@ -88,7 +97,7 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
       if (!user) throw new Error('No user')
       
       // Update the template and all future instances
-      await supabase
+      let query = supabase
         .from('expenses')
         .update({ 
           amount_cents: amountCents,
@@ -96,9 +105,18 @@ export function RecurringManager({ isOpen, onClose }: RecurringManagerProps) {
         })
         .eq('user_id', user.id)
         .eq('description', expense.description)
-        .eq('category_id', expense.category_id)
         .eq('is_recurring', true)
         .gte('date', new Date().toISOString().split('T')[0])
+      
+      // Handle null category_id properly
+      if (expense.category_id === null) {
+        query = query.is('category_id', null)
+      } else {
+        query = query.eq('category_id', expense.category_id)
+      }
+      
+      const { error } = await query
+      if (error) throw error
       
       setEditingId(null)
       setEditAmount('')
