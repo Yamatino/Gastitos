@@ -10,7 +10,7 @@ import { AddTransactionModal } from '../components/AddTransactionModal'
 import { MoreActionsMenu } from '../components/MoreActionsMenu'
 import { SummaryView } from '../components/SummaryView'
 import { BudgetManager } from '../components/BudgetManager'
-import { RecurringManager } from '../components/RecurringManager'
+
 
 export function Dashboard() {
   // User store
@@ -35,8 +35,7 @@ export function Dashboard() {
     setIsTransactionModalOpen,
     isBudgetManagerOpen,
     setIsBudgetManagerOpen,
-    isRecurringManagerOpen,
-    setIsRecurringManagerOpen,
+
     activeTab,
     setActiveTab,
     searchQuery,
@@ -71,7 +70,6 @@ export function Dashboard() {
       
       setIsLocalLoading(true)
       dataStore.loadUserData(userId)
-        .then(() => checkAndCreateRecurring(userId))
         .catch((error) => {
           console.error('Error loading data:', error)
           alert('Error al cargar datos. Por favor recarga la página.')
@@ -120,52 +118,7 @@ export function Dashboard() {
     }
   }
 
-  const checkAndCreateRecurring = async (userId: string) => {
-    const currentMonth = new Date().getMonth()
-    const currentYear = new Date().getFullYear()
-    
-    const { data: recurringExpenses } = await supabase
-      .from('expenses')
-      .select('*')
-      .eq('is_recurring', true)
-      .eq('user_id', userId)
-    
-    if (!recurringExpenses) return
-    
-    const uniqueRecurring = new Map()
-    recurringExpenses.forEach(expense => {
-      const key = `${expense.description}-${expense.category_id}`
-      if (!uniqueRecurring.has(key) || new Date(expense.date + 'T12:00:00') > new Date(uniqueRecurring.get(key).date + 'T12:00:00')) {
-        uniqueRecurring.set(key, expense)
-      }
-    })
-    
-    for (const expense of uniqueRecurring.values()) {
-      const expenseDate = new Date(expense.date + 'T12:00:00')
-      const isCurrentMonth = expenseDate.getMonth() === currentMonth && expenseDate.getFullYear() === currentYear
-      
-      if (!isCurrentMonth) {
-        const newDate = new Date(currentYear, currentMonth, Math.min(expenseDate.getDate(), 28))
-        
-        await supabase.from('expenses').insert({
-          user_id: userId,
-          description: expense.description,
-          amount_cents: expense.amount_cents,
-          currency: expense.currency,
-          exchange_rate: expense.exchange_rate,
-          usd_amount_cents: expense.usd_amount_cents,
-          category_id: expense.category_id,
-          payment_method: expense.payment_method,
-          is_installment: false,
-          is_recurring: true,
-          date: newDate.toISOString().split('T')[0],
-          status: 'paid',
-          transaction_type: 'expense',
-          is_salary: false
-        })
-      }
-    }
-  }
+
 
   const exportToCSV = () => {
     const headers = ['Fecha', 'Descripción', 'Categoría', 'Monto (ARS)', 'Monto (USD)', 'Método de Pago', 'Tipo']
@@ -466,7 +419,6 @@ export function Dashboard() {
             </div>
             <MoreActionsMenu
               onBudgetsClick={() => setIsBudgetManagerOpen(true)}
-              onRecurringClick={() => setIsRecurringManagerOpen(true)}
               onExportClick={exportToCSV}
             />
           </div>
@@ -673,11 +625,7 @@ export function Dashboard() {
             onClose={() => setIsBudgetManagerOpen(false)}
           />
 
-          {/* Recurring Manager */}
-          <RecurringManager
-            isOpen={isRecurringManagerOpen}
-            onClose={() => setIsRecurringManagerOpen(false)}
-          />
+
 
           {/* Delete Confirmation Modal */}
           {deleteModalOpen && transactionToDelete && (

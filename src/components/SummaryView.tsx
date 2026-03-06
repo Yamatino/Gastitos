@@ -9,7 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   LineChart, Line
 } from 'recharts'
-import { CreditCard, TrendingUp, Trash2, Package, Repeat, CalendarDays, PiggyBank } from 'lucide-react'
+import { CreditCard, TrendingUp, Trash2, Package, CalendarDays, PiggyBank } from 'lucide-react'
 import { fetchInflationData, type ProcessedInflation } from '../services/inflation'
 
 export function SummaryView() {
@@ -212,38 +212,6 @@ export function SummaryView() {
 
   return (
     <div className="space-y-6 pb-20">
-      {/* Monthly Recurring Expenses Card */}
-      {(() => {
-        const currentDate = new Date()
-        const currentMonth = currentDate.getMonth()
-        const currentYear = currentDate.getFullYear()
-        
-        const monthlyRecurring = expenses.filter(e => 
-          e.is_recurring && 
-          !e.is_installment &&
-          new Date(e.date + 'T12:00:00').getMonth() === currentMonth &&
-          new Date(e.date + 'T12:00:00').getFullYear() === currentYear
-        )
-        
-        const totalRecurring = monthlyRecurring.reduce((sum, e) => sum + e.amount_cents, 0)
-        const totalRecurringUsd = monthlyRecurring.reduce((sum, e) => sum + (e.usd_amount_cents || 0), 0)
-        
-        return (
-          <div className="bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl p-6 text-white">
-            <div className="flex items-center gap-2 mb-4">
-              <Repeat className="w-6 h-6" />
-              <h2 className="text-lg font-semibold">Gasto Recurrente Mensual</h2>
-            </div>
-            <div className="text-3xl font-bold mb-3">
-              {showUsd ? formatCurrency(totalRecurringUsd, 'USD') : formatCurrency(totalRecurring, 'ARS')}
-            </div>
-            <div className="bg-white/20 rounded-lg px-3 py-2 text-sm">
-              <span className="opacity-80">{monthlyRecurring.length} pagos recurrentes este mes</span>
-            </div>
-          </div>
-        )
-      })()}
-
       {/* Total Debt Card (Cuotas) */}
       <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-2xl p-6 text-white">
         <div className="flex items-center gap-2 mb-4">

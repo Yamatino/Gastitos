@@ -13,9 +13,6 @@ interface UIState {
   isBudgetManagerOpen: boolean
   setIsBudgetManagerOpen: (open: boolean) => void
   
-  isRecurringManagerOpen: boolean
-  setIsRecurringManagerOpen: (open: boolean) => void
-  
   // Transaction modal
   isTransactionModalOpen: boolean
   setIsTransactionModalOpen: (open: boolean) => void
@@ -59,9 +56,6 @@ export const useUIStore = create<UIState>()(
       isBudgetManagerOpen: false,
       setIsBudgetManagerOpen: (open) => set({ isBudgetManagerOpen: open }),
       
-      isRecurringManagerOpen: false,
-      setIsRecurringManagerOpen: (open) => set({ isRecurringManagerOpen: open }),
-      
       isTransactionModalOpen: false,
       setIsTransactionModalOpen: (open) => set({ isTransactionModalOpen: open }),
       
@@ -91,7 +85,6 @@ export const useUIStore = create<UIState>()(
         isLoading: false,
         isSettingsOpen: false,
         isBudgetManagerOpen: false,
-        isRecurringManagerOpen: false,
         isTransactionModalOpen: false,
         activeTab: 'gastos',
         showAllTransactions: false,

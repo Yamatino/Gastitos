@@ -53,7 +53,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
   // Expense-specific fields
   const [paymentMethod, setPaymentMethod] = useState<'debit' | 'credit'>('debit')
   const [installments, setInstallments] = useState(1)
-  const [isRecurring, setIsRecurring] = useState(false)
   
   // Income-specific fields
   const [isSalary, setIsSalary] = useState(false)
@@ -77,7 +76,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
     setCategoryId('')
     setPaymentMethod('debit')
     setInstallments(1)
-    setIsRecurring(false)
     setIsSalary(false)
     setCountForNextMonth(false)
     setCurrency('ARS')
@@ -171,7 +169,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
             original_amount_cents: originalAmountCents,
             category_id: categoryId || null,
             payment_method: paymentMethod,
-            is_recurring: isRecurring,
+            is_recurring: false,
             date: selectedDate,
             transaction_type: 'expense',
             is_installment: false,
@@ -614,21 +612,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
                 </div>
               )}
 
-              {/* Recurring Expense (only for expenses) */}
-              {activeTab === 'expense' && (
-                <div className="flex items-center gap-3 p-3 bg-primary/10 rounded-xl border border-primary/20">
-                  <input
-                    type="checkbox"
-                    id="isRecurring"
-                    checked={isRecurring}
-                    onChange={(e) => setIsRecurring(e.target.checked)}
-                    className="w-5 h-5 text-primary rounded focus:ring-primary bg-background border-input"
-                  />
-                  <label htmlFor="isRecurring" className="text-sm font-medium text-foreground cursor-pointer">
-                    Gasto recurrente mensual
-                  </label>
-                </div>
-              )}
+
             </motion.div>
           </AnimatePresence>
 
