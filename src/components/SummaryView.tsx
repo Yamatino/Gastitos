@@ -170,7 +170,8 @@ export function SummaryView() {
       return installmentDate < today
     }).length
     
-    const currentNumber = paidCount + 1
+    const firstPending = sorted.find((e: Expense) => e.status === 'pending')
+    const currentNumber = firstPending?.installment_number || (paidCount + 1)
     const totalAmount = sorted.reduce((sum: number, e: Expense) => sum + e.amount_cents, 0)
     const remainingAmount = sorted
       .filter((e: Expense) => e.status === 'pending')

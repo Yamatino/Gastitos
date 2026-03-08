@@ -265,7 +265,7 @@ BEGIN
             p_installment_count,
             v_current_amount,
             v_installment_date,
-            CASE WHEN v_i = 0 THEN 'paid' ELSE 'pending' END,
+            'pending',
             'expense'
         )
         RETURNING id INTO v_installment_ids[v_i + 1];
