@@ -34,10 +34,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   
   date DATE NOT NULL,
   status TEXT DEFAULT 'paid' CHECK (status IN ('paid', 'pending')),
-  
-  is_recurring BOOLEAN DEFAULT false,
-  recurring_parent_id UUID REFERENCES expenses(id),
-  
+
   created_at TIMESTAMP DEFAULT NOW()
 );
 

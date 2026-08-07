@@ -96,7 +96,6 @@ export async function createExpense(expenseData: {
   usd_amount_cents: number;
   category_id?: string | null;
   payment_method: 'debit' | 'credit';
-  is_recurring: boolean;
   date: string;
   transaction_type: 'expense' | 'income' | 'savings';
   is_salary?: boolean;
@@ -147,7 +146,6 @@ export async function createInstallments(
     p_base_date: baseDate,
     p_billing_day: Math.round(billingDay)
   };
-  console.log('Creating installments with params:', params);
   const result = await supabase.rpc('create_installments', params);
   if (result.error) {
     console.error('create_installments error details:', result.error);
@@ -198,14 +196,34 @@ export async function deleteCategory(categoryId: string) {
 
 // Check if category has transactions
 export async function getTransactionCountForCategory(categoryId: string): Promise<number> {
-  const result = await queryWithTimeout(async () => {
-    return supabase
-      .from('expenses')
-      .select('id', { count: 'exact', head: true })
-      .eq('category_id', categoryId);
-  });
-  
-  return result.length || 0;
+  return withRetry(async () => {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new AppError(
+          getErrorMessage(ErrorCodes.TIMEOUT_ERROR),
+          ErrorCodes.TIMEOUT_ERROR,
+          'high',
+          null,
+          true
+        ));
+      }, DEFAULT_TIMEOUT);
+    });
+
+    const result = await Promise.race([
+      supabase
+        .from('expenses')
+        .select('id', { count: 'exact', head: true })
+        .eq('category_id', categoryId),
+      timeoutPromise
+    ]);
+
+    if (result.error) {
+      throw handleSupabaseError(result.error, 'getTransactionCountForCategory');
+    }
+
+    // head:true queries never return a data body, so count is the only signal
+    return result.count || 0;
+  }, MAX_RETRIES);
 }
 
 // Fetch exchange rate with caching
@@ -221,7 +239,6 @@ export async function fetchExchangeRate(): Promise<number> {
   if (cachedRate && cachedTime) {
     const age = Date.now() - parseInt(cachedTime);
     if (age < cacheDuration) {
-      console.log('Using cached exchange rate:', cachedRate);
       return parseFloat(cachedRate);
     }
   }

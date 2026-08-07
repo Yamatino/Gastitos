@@ -7,6 +7,7 @@ import { fetchExchangeRate } from './lib/api'
 import { LoginPage } from './pages/LoginPage'
 import { Dashboard } from './pages/Dashboard'
 import { SettingsModal } from './components/SettingsModal'
+import { Toaster } from './components/ui/toaster'
 import { Button } from './components/ui/button'
 import { Settings } from 'lucide-react'
 
@@ -18,21 +19,7 @@ function App() {
 
   useEffect(() => {
     setIsLoading(true)
-    
-    // Check for dev bypass user first
-    const devBypassUser = localStorage.getItem('devBypassUser')
-    if (devBypassUser) {
-      const parsedUser = JSON.parse(devBypassUser)
-      setUser(parsedUser)
-      // Don't set loading to false here - let the auth state handler do it
-      // or we'll handle it after a short delay to ensure state is set
-      setTimeout(() => {
-        setIsLoading(false)
-        initializeCategories(parsedUser.id)
-      }, 100)
-      return
-    }
-    
+
     // Check if we have OAuth hash to parse
     const hash = window.location.hash
     const hasAuthHash = hash && hash.includes('access_token')
@@ -89,8 +76,6 @@ function App() {
   }, [])
 
   const handleLogout = async () => {
-    // Clear dev bypass user if present
-    localStorage.removeItem('devBypassUser')
     setUser(null)
     await supabase.auth.signOut()
   }
@@ -145,10 +130,12 @@ function App() {
       </main>
 
       {/* Settings Modal */}
-      <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
       />
+
+      <Toaster />
     </div>
   )
 }

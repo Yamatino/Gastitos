@@ -1,4 +1,5 @@
 // Centralized error handling for the application
+import { useToastStore } from '../stores/toastStore';
 
 export type ErrorSeverity = 'low' | 'medium' | 'high' | 'critical';
 
@@ -46,7 +47,7 @@ export const ErrorCodes = {
   
   // Business logic errors
   CATEGORY_HAS_TRANSACTIONS: 'CATEGORY_HAS_TRANSACTIONS',
-  DUPLICATE_RECURRING: 'DUPLICATE_RECURRING',
+  DUPLICATE_ENTRY: 'DUPLICATE_ENTRY',
   INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS',
   
   // Unknown errors
@@ -66,7 +67,7 @@ const errorMessages: Record<string, string> = {
   [ErrorCodes.VALIDATION_ERROR]: 'Datos inválidos. Verifica la información ingresada.',
   [ErrorCodes.INVALID_INPUT]: 'Entrada inválida.',
   [ErrorCodes.CATEGORY_HAS_TRANSACTIONS]: 'No se puede eliminar: la categoría tiene transacciones asociadas.',
-  [ErrorCodes.DUPLICATE_RECURRING]: 'Esta transacción recurrente ya existe.',
+  [ErrorCodes.DUPLICATE_ENTRY]: 'Ya existe un registro con estos datos.',
   [ErrorCodes.INSUFFICIENT_FUNDS]: 'Fondos insuficientes.',
   [ErrorCodes.UNKNOWN_ERROR]: 'Ocurrió un error inesperado.',
 };
@@ -104,8 +105,8 @@ export function handleSupabaseError(error: unknown, context: string): AppError {
           );
         case '23505': // unique_violation
           return new AppError(
-            getErrorMessage(ErrorCodes.DUPLICATE_RECURRING),
-            ErrorCodes.DUPLICATE_RECURRING,
+            getErrorMessage(ErrorCodes.DUPLICATE_ENTRY),
+            ErrorCodes.DUPLICATE_ENTRY,
             'medium',
             error,
             false
@@ -162,10 +163,10 @@ export function handleSupabaseError(error: unknown, context: string): AppError {
   );
 }
 
-// Global error handler that shows alerts
+// Global error handler that shows a toast
 export function showErrorAlert(error: unknown, context?: string): void {
   let message: string;
-  
+
   if (error instanceof AppError) {
     message = error.message;
   } else if (error instanceof Error) {
@@ -173,12 +174,12 @@ export function showErrorAlert(error: unknown, context?: string): void {
   } else {
     message = getErrorMessage(ErrorCodes.UNKNOWN_ERROR);
   }
-  
+
   if (context) {
     message = `${context}: ${message}`;
   }
-  
-  alert(message);
+
+  useToastStore.getState().addToast(message, 'error');
 }
 
 // Retry wrapper for async operations
@@ -217,13 +218,14 @@ let isOnline = navigator.onLine;
 export function initNetworkMonitoring(): void {
   window.addEventListener('online', () => {
     isOnline = true;
-    console.log('App is online');
   });
-  
+
   window.addEventListener('offline', () => {
     isOnline = false;
-    console.log('App is offline');
-    alert('Estás sin conexión. Algunas funciones pueden no estar disponibles.');
+    useToastStore.getState().addToast(
+      'Estás sin conexión. Algunas funciones pueden no estar disponibles.',
+      'error'
+    );
   });
 }
 

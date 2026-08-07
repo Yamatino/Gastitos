@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import { CreditCard, TrendingUp, Trash2, Package, CalendarDays, PiggyBank } from 'lucide-react'
 import { fetchInflationData, type ProcessedInflation } from '../services/inflation'
+import { useToastStore } from '../stores/toastStore'
 
 export function SummaryView() {
   const { exchangeRate, showUsd } = useUserStore()
@@ -207,7 +208,7 @@ export function SummaryView() {
       window.location.reload()
     } catch (err) {
       console.error('Error deleting group:', err)
-      alert('Error al eliminar el grupo de cuotas')
+      useToastStore.getState().addToast('Error al eliminar el grupo de cuotas')
     }
   }
 
@@ -226,13 +227,13 @@ export function SummaryView() {
           <div className="bg-white/20 rounded-lg px-3 py-2">
             <span className="opacity-80">Este mes:</span>
             <span className="font-semibold ml-1">
-              {showUsd ? formatCurrency(thisMonthDebt * (exchangeRate / 100) / 100, 'USD') : formatCurrency(thisMonthDebt, 'ARS')}
+              {showUsd ? formatCurrency(thisMonthDebt / exchangeRate, 'USD') : formatCurrency(thisMonthDebt, 'ARS')}
             </span>
           </div>
           <div className="bg-white/20 rounded-lg px-3 py-2">
             <span className="opacity-80">Próximos meses:</span>
             <span className="font-semibold ml-1">
-              {showUsd ? formatCurrency(nextMonthsDebt * (exchangeRate / 100) / 100, 'USD') : formatCurrency(nextMonthsDebt, 'ARS')}
+              {showUsd ? formatCurrency(nextMonthsDebt / exchangeRate, 'USD') : formatCurrency(nextMonthsDebt, 'ARS')}
             </span>
           </div>
         </div>
@@ -321,7 +322,7 @@ export function SummaryView() {
         })
         
         const total3MonthDebt = month1Debt + month2Debt + month3Debt
-        const total3MonthDebtUsd = total3MonthDebt * (exchangeRate / 100) / 100
+        const total3MonthDebtUsd = total3MonthDebt / exchangeRate
         
         const monthNames = [
           new Date(currentYear, currentMonth).toLocaleDateString('es-AR', { month: 'short' }),
@@ -366,19 +367,19 @@ export function SummaryView() {
                 <div className="bg-white/20 rounded-lg px-3 py-1 flex justify-between">
                   <span className="opacity-80">{monthNames[0]}:</span>
                   <span className="font-semibold">
-                    {showUsd ? formatCurrency(month1Debt * (exchangeRate / 100) / 100, 'USD') : formatCurrency(month1Debt, 'ARS')}
+                    {showUsd ? formatCurrency(month1Debt / exchangeRate, 'USD') : formatCurrency(month1Debt, 'ARS')}
                   </span>
                 </div>
                 <div className="bg-white/20 rounded-lg px-3 py-1 flex justify-between">
                   <span className="opacity-80">{monthNames[1]}:</span>
                   <span className="font-semibold">
-                    {showUsd ? formatCurrency(month2Debt * (exchangeRate / 100) / 100, 'USD') : formatCurrency(month2Debt, 'ARS')}
+                    {showUsd ? formatCurrency(month2Debt / exchangeRate, 'USD') : formatCurrency(month2Debt, 'ARS')}
                   </span>
                 </div>
                 <div className="bg-white/20 rounded-lg px-3 py-1 flex justify-between">
                   <span className="opacity-80">{monthNames[2]}:</span>
                   <span className="font-semibold">
-                    {showUsd ? formatCurrency(month3Debt * (exchangeRate / 100) / 100, 'USD') : formatCurrency(month3Debt, 'ARS')}
+                    {showUsd ? formatCurrency(month3Debt / exchangeRate, 'USD') : formatCurrency(month3Debt, 'ARS')}
                   </span>
                 </div>
               </div>
@@ -581,7 +582,7 @@ export function SummaryView() {
                         <p className="text-xs text-gray-400">Sin ajustar</p>
                       </div>
                       <span className="text-xl font-bold text-gray-900">
-                        {showUsd ? formatCurrency(oldTotal * (exchangeRate / 100) / 100, 'USD') : formatCurrency(oldTotal, 'ARS')}
+                        {showUsd ? formatCurrency(oldTotal / exchangeRate, 'USD') : formatCurrency(oldTotal, 'ARS')}
                       </span>
                     </div>
                     
@@ -591,7 +592,7 @@ export function SummaryView() {
                         <p className="text-xs text-amber-700">Ajustado por inflación ({cumulativeInflation.toFixed(1)}%)</p>
                       </div>
                       <span className="text-xl font-bold text-amber-700">
-                        {showUsd ? formatCurrency(adjustedTotal * (exchangeRate / 100) / 100, 'USD') : formatCurrency(adjustedTotal, 'ARS')}
+                        {showUsd ? formatCurrency(adjustedTotal / exchangeRate, 'USD') : formatCurrency(adjustedTotal, 'ARS')}
                       </span>
                     </div>
                     
@@ -738,7 +739,7 @@ export function SummaryView() {
                     </span>
                     <span className="font-semibold text-gray-900">
                       {showUsd 
-                        ? formatCurrency(group.remainingAmount * (exchangeRate / 100) / 100, 'USD')
+                        ? formatCurrency(group.remainingAmount / exchangeRate, 'USD')
                         : formatCurrency(group.remainingAmount, 'ARS')
                       } restantes
                     </span>

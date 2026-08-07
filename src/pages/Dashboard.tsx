@@ -10,6 +10,7 @@ import { AddTransactionModal } from '../components/AddTransactionModal'
 import { MoreActionsMenu } from '../components/MoreActionsMenu'
 import { SummaryView } from '../components/SummaryView'
 import { BudgetManager } from '../components/BudgetManager'
+import { useToastStore } from '../stores/toastStore'
 
 
 export function Dashboard() {
@@ -72,7 +73,7 @@ export function Dashboard() {
       dataStore.loadUserData(userId)
         .catch((error) => {
           console.error('Error loading data:', error)
-          alert('Error al cargar datos. Por favor recarga la página.')
+          useToastStore.getState().addToast('Error al cargar datos. Por favor recarga la página.')
         })
         .finally(() => {
           setIsLocalLoading(false)
@@ -97,15 +98,16 @@ export function Dashboard() {
 
   const handleDeleteTransaction = async () => {
     if (!transactionToDelete) return
-    
+
     try {
-      const { error } = await supabase
-        .from('expenses')
-        .delete()
-        .eq('id', transactionToDelete.id)
-      
+      const isGroup = (transactionToDelete as Expense & { _isInstallmentGroup?: boolean })._isInstallmentGroup
+      const query = supabase.from('expenses').delete()
+      const { error } = isGroup && transactionToDelete.installment_group_id
+        ? await query.eq('installment_group_id', transactionToDelete.installment_group_id)
+        : await query.eq('id', transactionToDelete.id)
+
       if (error) throw error
-      
+
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         await dataStore.fetchExpenses(user.id)
@@ -114,7 +116,7 @@ export function Dashboard() {
       setTransactionToDelete(null)
     } catch (err) {
       console.error('Error deleting transaction:', err)
-      alert('Error al eliminar la transacción')
+      useToastStore.getState().addToast('Error al eliminar la transacción')
     }
   }
 
@@ -632,9 +634,15 @@ export function Dashboard() {
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
               <div className="relative glass-card rounded-2xl p-6 shadow-2xl max-w-sm w-full border border-border">
-                <h3 className="text-lg font-bold text-foreground mb-2">Eliminar transacción</h3>
+                <h3 className="text-lg font-bold text-foreground mb-2">
+                  {(transactionToDelete as Expense & { _isInstallmentGroup?: boolean })._isInstallmentGroup
+                    ? 'Eliminar todas las cuotas'
+                    : 'Eliminar transacción'}
+                </h3>
                 <p className="text-muted-foreground mb-4">
-                  ¿Estás seguro de que quieres eliminar "{transactionToDelete.description}"?
+                  {(transactionToDelete as Expense & { _isInstallmentGroup?: boolean })._isInstallmentGroup
+                    ? `¿Estás seguro de que quieres eliminar TODAS las cuotas de "${transactionToDelete.description.replace(/\s*\(\d+\/\d+\)$/, '')}"? Se eliminarán las cuotas pagadas y pendientes de todos los meses.`
+                    : `¿Estás seguro de que quieres eliminar "${transactionToDelete.description}"?`}
                 </p>
                 <div className="flex gap-3">
                   <Button

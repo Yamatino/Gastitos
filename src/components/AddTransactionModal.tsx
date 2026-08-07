@@ -6,6 +6,8 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, CreditCard, Wallet, TrendingUp, PiggyBank, ChevronDown } from 'lucide-react'
 import type { Category } from '../services/supabase'
+import { sanitizeDescription } from '../lib/validation'
+import { useToastStore } from '../stores/toastStore'
 
 type TransactionType = 'expense' | 'income' | 'savings'
 
@@ -22,6 +24,10 @@ const getRawNumber = (formattedValue: string): number => {
   return parseFloat(formattedValue.replace(/\./g, '').replace(',', '.')) || 0
 }
 
+// PostgreSQL integer column limit
+const MAX_INT = 2147483647
+const isOutOfIntRange = (cents: number): boolean => cents > MAX_INT || cents < -MAX_INT
+
 interface AddTransactionModalProps {
   isOpen: boolean
   onClose: () => void
@@ -37,7 +43,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
   
   // Common fields
   const [amount, setAmount] = useState('')
-  const [description, setDescription] = useState('')
+  const [rawDescription, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
@@ -90,18 +96,18 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
     e.preventDefault()
     
     // Validation
-    if (!amount || !description) {
-      alert('Por favor completa todos los campos requeridos')
+    if (!amount || !rawDescription) {
+      useToastStore.getState().addToast('Por favor completa todos los campos requeridos')
       return
     }
-    
+
     if (activeTab === 'expense' && !categoryId) {
-      alert('Por favor selecciona una categoría')
+      useToastStore.getState().addToast('Por favor selecciona una categoría')
       return
     }
 
     if (!user) {
-      alert('Error: Usuario no autenticado')
+      useToastStore.getState().addToast('Error: Usuario no autenticado')
       return
     }
 
@@ -109,7 +115,8 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
 
     try {
       const rawAmount = getRawNumber(amount)
-      
+      const description = sanitizeDescription(rawDescription)
+
       if (activeTab === 'expense') {
         // Handle expense
         let amountCents: number
@@ -126,15 +133,13 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           originalAmountCents = undefined
         }
 
-        // Validate amount doesn't exceed PostgreSQL integer limit (2,147,483,647)
-        const MAX_INT = 2147483647
-        if (amountCents > MAX_INT || amountCents < -MAX_INT) {
-          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
+        if (isOutOfIntRange(amountCents)) {
+          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
           setIsLoading(false)
           return
         }
-        if (usdAmountCents > MAX_INT || usdAmountCents < -MAX_INT) {
-          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
+        if (isOutOfIntRange(usdAmountCents)) {
+          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
           setIsLoading(false)
           return
         }
@@ -169,7 +174,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
             original_amount_cents: originalAmountCents,
             category_id: categoryId || null,
             payment_method: paymentMethod,
-            is_recurring: false,
             date: selectedDate,
             transaction_type: 'expense',
             is_installment: false,
@@ -178,7 +182,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
             installment_number: null,
             total_installments: null,
             installment_amount_cents: null,
-            recurring_parent_id: null,
             is_salary: false
           })
         }
@@ -187,15 +190,13 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
         const amountCents = Math.round(rawAmount * 100)
         const usdAmountCents = Math.round(amountCents / exchangeRate)
 
-        // Validate amount doesn't exceed PostgreSQL integer limit
-        const MAX_INT = 2147483647
-        if (amountCents > MAX_INT || amountCents < -MAX_INT) {
-          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
+        if (isOutOfIntRange(amountCents)) {
+          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
           setIsLoading(false)
           return
         }
-        if (usdAmountCents > MAX_INT || usdAmountCents < -MAX_INT) {
-          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
+        if (isOutOfIntRange(usdAmountCents)) {
+          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
           setIsLoading(false)
           return
         }
@@ -209,7 +210,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           usd_amount_cents: -usdAmountCents,
           category_id: null, // No category for income
           payment_method: 'debit',
-          is_recurring: false,
           date: selectedDate,
           transaction_type: 'income',
           is_salary: isSalary,
@@ -218,23 +218,20 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           installment_group_id: null,
           installment_number: null,
           total_installments: null,
-          installment_amount_cents: null,
-          recurring_parent_id: null
+          installment_amount_cents: null
         })
       } else {
         // Handle savings
         const amountCents = Math.round(rawAmount * 100)
         const usdAmountCents = Math.round(amountCents / exchangeRate)
 
-        // Validate amount doesn't exceed PostgreSQL integer limit
-        const MAX_INT = 2147483647
-        if (amountCents > MAX_INT || amountCents < -MAX_INT) {
-          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
+        if (isOutOfIntRange(amountCents)) {
+          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
           setIsLoading(false)
           return
         }
-        if (usdAmountCents > MAX_INT || usdAmountCents < -MAX_INT) {
-          alert('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
+        if (isOutOfIntRange(usdAmountCents)) {
+          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
           setIsLoading(false)
           return
         }
@@ -248,7 +245,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           usd_amount_cents: usdAmountCents,
           category_id: null, // No category for savings
           payment_method: 'debit',
-          is_recurring: false,
           date: selectedDate,
           transaction_type: 'savings',
           is_installment: false,
@@ -257,7 +253,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           installment_number: null,
           total_installments: null,
           installment_amount_cents: null,
-          recurring_parent_id: null,
           is_salary: false
         })
       }
@@ -440,7 +435,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
                 </label>
                 <Input
                   type="text"
-                  value={description}
+                  value={rawDescription}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder={activeTab === 'expense' ? 'Ej: Cena con amigos' : activeTab === 'income' ? 'Ej: Sueldo mensual' : 'Ej: Ahorro de emergencia'}
                   className="bg-background"
@@ -620,7 +615,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           <div className="pt-4">
             <Button
               type="submit"
-              disabled={isLoading || !amount || !description || (activeTab === 'expense' && !categoryId)}
+              disabled={isLoading || !amount || !rawDescription || (activeTab === 'expense' && !categoryId)}
               className={`w-full py-3 rounded-xl font-semibold text-lg ${getSubmitButtonClass()}`}
             >
               {getSubmitButtonText()}

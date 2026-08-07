@@ -72,7 +72,6 @@ describe('Validation Schemas', () => {
       category_id: '550e8400-e29b-41d4-a716-446655440002',
       payment_method: 'debit',
       is_installment: false,
-      is_recurring: false,
       date: '2024-01-15',
       status: 'paid',
       transaction_type: 'expense',

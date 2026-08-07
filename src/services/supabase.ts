@@ -22,8 +22,6 @@ export type Expense = {
   installment_amount_cents: number | null
   date: string
   status: 'paid' | 'pending'
-  is_recurring: boolean
-  recurring_parent_id: string | null
   created_at: string
   updated_at: string
   // Transaction type (expense, income, savings)

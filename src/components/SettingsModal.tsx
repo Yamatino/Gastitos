@@ -3,7 +3,9 @@ import { useUserStore } from '../stores/userStore'
 import { useDataStore } from '../stores/dataStore'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { X, Settings, DollarSign, Bell, Target, CreditCard, Plus, Trash2, Sun, Moon, Zap, ZapOff } from 'lucide-react'
+import { X, Settings, DollarSign, Target, CreditCard, Plus, Trash2, Sun, Moon, Zap, ZapOff } from 'lucide-react'
+import { sanitizeCategoryName } from '../lib/validation'
+import { useToastStore } from '../stores/toastStore'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -31,8 +33,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   } = useDataStore()
   
   const [activeTab, setActiveTab] = useState<'general' | 'cuotas' | 'categorias'>('general')
-  const [budgetAlertThreshold, setBudgetAlertThreshold] = useState(80)
-  const [billingDay, setBillingDay] = useState(10)
+  const [billingDay, setBillingDay] = useState(() => {
+    const saved = localStorage.getItem('defaultBillingDay')
+    return saved ? parseInt(saved) : 10
+  })
   const [savingsGoalInput, setSavingsGoalInput] = useState(monthlySavingsGoalUSD.toString())
   
   // Category management states
@@ -51,7 +55,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     
     try {
       await addCategory({
-        name: newCategoryName.trim(),
+        name: sanitizeCategoryName(newCategoryName),
         icon: newCategoryIcon,
         color: newCategoryColor,
         is_default: false
@@ -77,7 +81,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   const handleSaveBillingDay = () => {
     localStorage.setItem('defaultBillingDay', billingDay.toString())
-    alert('Día de facturación guardado')
+    useToastStore.getState().addToast('Día de facturación guardado', 'success')
   }
 
   return (
@@ -231,32 +235,6 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                 <p className="text-xs text-muted-foreground mt-2">
                   Esta meta se aplicará a todos los meses futuros
                 </p>
-              </div>
-
-              {/* Budget Alert */}
-              <div className="p-4 bg-secondary rounded-xl">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-warning/20 text-warning rounded-lg">
-                    <Bell className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">Alerta de presupuesto</p>
-                    <p className="text-sm text-muted-foreground">Advertir al alcanzar {budgetAlertThreshold}% del límite</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min="50"
-                    max="100"
-                    value={budgetAlertThreshold}
-                    onChange={(e) => setBudgetAlertThreshold(parseInt(e.target.value))}
-                    className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                  />
-                  <span className="text-lg font-semibold text-primary w-12 text-center">
-                    {budgetAlertThreshold}%
-                  </span>
-                </div>
               </div>
 
             </div>
