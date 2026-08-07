@@ -42,9 +42,8 @@ export function groupInstallments(expenses: Expense[], referenceDate: Date = new
     const currentNumber = firstPending?.installment_number || paidCount + 1
 
     const totalAmountCents = sorted.reduce((sum, e) => sum + e.amount_cents, 0)
-    const remainingAmountCents = sorted
-      .filter((e) => e.status === 'pending')
-      .reduce((sum, e) => sum + e.amount_cents, 0)
+    const pendingRows = sorted.filter((e) => e.status === 'pending')
+    const remainingAmountCents = pendingRows.reduce((sum, e) => sum + e.amount_cents, 0)
 
     return {
       groupId,
@@ -52,7 +51,9 @@ export function groupInstallments(expenses: Expense[], referenceDate: Date = new
       categoryId: first.category_id,
       totalInstallments,
       paidCount,
-      remainingCount: totalInstallments - paidCount,
+      // Based on actual DB status (not the date heuristic above), so a group with
+      // overdue-but-still-'pending' rows never silently disappears from the active list.
+      remainingCount: pendingRows.length,
       currentNumber,
       totalAmountCents,
       remainingAmountCents,
