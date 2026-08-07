@@ -21,3 +21,14 @@ export function formatDate(date: Date | string): string {
     year: "numeric",
   }).format(new Date(date))
 }
+
+/** Converts a cents amount to the currently displayed currency using the live exchange rate. */
+export function toDisplayCurrency(
+  amountCents: number,
+  showUsd: boolean,
+  exchangeRate: number
+): { amount: number; currency: "ARS" | "USD" } {
+  return showUsd
+    ? { amount: Math.round(amountCents / exchangeRate), currency: "USD" }
+    : { amount: amountCents, currency: "ARS" }
+}

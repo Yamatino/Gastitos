@@ -5,6 +5,7 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, Plus, Target, Trash2, TrendingUp } from 'lucide-react'
 import { formatCurrency } from '../lib/utils'
+import { getCurrentMonthExpenseByCategory } from '../lib/categoryAggregation'
 
 interface BudgetManagerProps {
   isOpen: boolean
@@ -20,22 +21,8 @@ export function BudgetManager({ isOpen, onClose }: BudgetManagerProps) {
 
   if (!isOpen) return null
 
-  // Calculate current spending per category for this month
-  const currentMonth = new Date().getMonth()
-  const currentYear = new Date().getFullYear()
-  
-  const categorySpending = new Map<string, number>()
-  expenses
-    .filter(e => {
-      const date = new Date(e.date + 'T12:00:00')
-      return date.getMonth() === currentMonth && 
-             date.getFullYear() === currentYear && 
-             e.amount_cents > 0
-    })
-    .forEach(e => {
-      const current = categorySpending.get(e.category_id) || 0
-      categorySpending.set(e.category_id, current + e.amount_cents)
-    })
+  // Current-month, expense-only spending per category (excludes savings transfers)
+  const categorySpending = getCurrentMonthExpenseByCategory(expenses, categories)
 
   const handleAddBudget = () => {
     if (!selectedCategory || !budgetAmount) return
