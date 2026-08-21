@@ -121,6 +121,46 @@ export async function createExpense(expenseData: {
   return result as Expense;
 }
 
+// Update a non-installment expense/income/savings entry
+export async function updateExpense(
+  id: string,
+  updates: Partial<{
+    description: string;
+    amount_cents: number;
+    currency: string;
+    exchange_rate: number;
+    usd_amount_cents: number;
+    category_id: string | null;
+    payment_method: 'debit' | 'credit';
+    date: string;
+    transaction_type: 'expense' | 'income' | 'savings';
+    is_salary: boolean;
+    original_currency: 'ARS' | 'USD' | null;
+    original_amount_cents: number | null;
+  }>
+): Promise<Expense> {
+  const result = await queryWithTimeout(async () => {
+    return supabase
+      .from('expenses')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+  });
+
+  if (!result) {
+    throw new AppError(
+      'Error al actualizar la transacción',
+      ErrorCodes.DB_QUERY_ERROR,
+      'high',
+      null,
+      false
+    );
+  }
+
+  return result as Expense;
+}
+
 // Create installments using stored procedure
 export async function createInstallments(
   userId: string,

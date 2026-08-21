@@ -5,7 +5,7 @@ import { useUIStore } from '../stores/uiStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency } from '../lib/utils'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Search, Eye, EyeOff } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Search, Eye, EyeOff, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { AddTransactionModal } from '../components/AddTransactionModal'
 import { MoreActionsMenu } from '../components/MoreActionsMenu'
 import { SummaryView } from '../components/SummaryView'
@@ -53,7 +53,9 @@ export function Dashboard() {
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] = useState<Expense | null>(null)
-  const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [pendingDeleteKeys, setPendingDeleteKeys] = useState<Set<string>>(new Set())
+  const pendingDeleteTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   // Get store references
   const dataStore = useDataStore()
 
@@ -96,15 +98,13 @@ export function Dashboard() {
     }
   }
 
-  const handleDeleteTransaction = async () => {
-    if (!transactionToDelete) return
-
+  const commitDeleteTransaction = async (transaction: Expense) => {
     try {
-      const isGroup = (transactionToDelete as Expense & { _isInstallmentGroup?: boolean })._isInstallmentGroup
+      const isGroup = (transaction as Expense & { _isInstallmentGroup?: boolean })._isInstallmentGroup
       const query = supabase.from('expenses').delete()
-      const { error } = isGroup && transactionToDelete.installment_group_id
-        ? await query.eq('installment_group_id', transactionToDelete.installment_group_id)
-        : await query.eq('id', transactionToDelete.id)
+      const { error } = isGroup && transaction.installment_group_id
+        ? await query.eq('installment_group_id', transaction.installment_group_id)
+        : await query.eq('id', transaction.id)
 
       if (error) throw error
 
@@ -112,13 +112,65 @@ export function Dashboard() {
       if (user) {
         await dataStore.fetchExpenses(user.id)
       }
-      setDeleteModalOpen(false)
-      setTransactionToDelete(null)
     } catch (err) {
       console.error('Error deleting transaction:', err)
       useToastStore.getState().addToast('Error al eliminar la transacción')
     }
   }
+
+  // Soft delete: hide the row immediately and give the user a few seconds to undo
+  // before the deletion actually hits the database.
+  const handleDeleteTransaction = () => {
+    if (!transactionToDelete) return
+
+    const transaction = transactionToDelete
+    const isGroup = (transaction as Expense & { _isInstallmentGroup?: boolean })._isInstallmentGroup
+    const key = isGroup && transaction.installment_group_id ? transaction.installment_group_id : transaction.id
+
+    setPendingDeleteKeys(prev => new Set(prev).add(key))
+    setDeleteModalOpen(false)
+    setTransactionToDelete(null)
+
+    const timer = setTimeout(() => {
+      pendingDeleteTimers.current.delete(key)
+      commitDeleteTransaction(transaction)
+      setPendingDeleteKeys(prev => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }, 5000)
+    pendingDeleteTimers.current.set(key, timer)
+
+    useToastStore.getState().addToast(
+      isGroup ? 'Cuotas eliminadas' : 'Transacción eliminada',
+      'success',
+      {
+        duration: 5000,
+        action: {
+          label: 'Deshacer',
+          onClick: () => {
+            const pendingTimer = pendingDeleteTimers.current.get(key)
+            if (pendingTimer) {
+              clearTimeout(pendingTimer)
+              pendingDeleteTimers.current.delete(key)
+            }
+            setPendingDeleteKeys(prev => {
+              const next = new Set(prev)
+              next.delete(key)
+              return next
+            })
+          }
+        }
+      }
+    )
+  }
+
+  useEffect(() => {
+    return () => {
+      pendingDeleteTimers.current.forEach(timer => clearTimeout(timer))
+    }
+  }, [])
 
 
 
@@ -152,6 +204,20 @@ export function Dashboard() {
     document.body.removeChild(link)
   }
 
+  const changeMonth = (delta: number) => {
+    let newMonth = selectedMonth + delta
+    let newYear = selectedYear
+    if (newMonth < 0) {
+      newMonth = 11
+      newYear -= 1
+    } else if (newMonth > 11) {
+      newMonth = 0
+      newYear += 1
+    }
+    setSelectedMonth(newMonth)
+    setSelectedYear(newYear)
+  }
+
   // Calculate totals
   const monthlyTransactions = expenses.filter(expense => {
     const expenseDate = new Date(expense.date + 'T12:00:00')
@@ -183,16 +249,18 @@ export function Dashboard() {
     )
   )
 
-  const filteredExpenses = searchQuery
-    ? expenses.filter(e => 
-        e.description.toLowerCase().includes(searchQuery.toLowerCase()) &&
+  const isPendingDelete = (e: Expense) =>
+    pendingDeleteKeys.has(e.id) || (!!e.installment_group_id && pendingDeleteKeys.has(e.installment_group_id))
+
+  // Searching looks across all periods, not just the selected month — otherwise a
+  // match outside the current month silently shows up as "no results".
+  const filteredExpenses = (searchQuery
+    ? expenses.filter(e => e.description.toLowerCase().includes(searchQuery.toLowerCase()))
+    : expenses.filter(e =>
         new Date(e.date + 'T12:00:00').getMonth() === selectedMonth &&
         new Date(e.date + 'T12:00:00').getFullYear() === selectedYear
       )
-    : expenses.filter(e => 
-        new Date(e.date + 'T12:00:00').getMonth() === selectedMonth &&
-        new Date(e.date + 'T12:00:00').getFullYear() === selectedYear
-      )
+  ).filter(e => !isPendingDelete(e))
 
   const getGroupedTransactions = () => {
     const grouped = new Map()
@@ -424,9 +492,24 @@ export function Dashboard() {
               onExportClick={exportToCSV}
             />
           </div>
+          {searchQuery && (
+            <p className="text-xs text-muted-foreground -mt-2">
+              Buscando en todos los períodos
+            </p>
+          )}
 
           {/* Month Selector */}
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap gap-2 items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => changeMonth(-1)}
+              className="border-border hover:bg-muted shrink-0 px-2.5"
+              title="Mes anterior"
+              aria-label="Mes anterior"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
@@ -447,6 +530,16 @@ export function Dashboard() {
                 <option key={year} value={year}>{year}</option>
               ))}
             </select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => changeMonth(1)}
+              className="border-border hover:bg-muted shrink-0 px-2.5"
+              title="Mes siguiente"
+              aria-label="Mes siguiente"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -486,48 +579,11 @@ export function Dashboard() {
                    ? groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup)
                    : groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup).slice(0, 8)
                  ).map((expense) => (
-                  <div 
-                    key={expense.id} 
-                    className={`p-4 flex items-center justify-between hover:bg-muted/50 cursor-pointer relative group transition-colors ${
+                  <div
+                    key={expense.id}
+                    className={`p-4 flex items-center justify-between hover:bg-muted/50 relative group transition-colors ${
                       expense._isInstallmentGroup ? 'border-l-4 border-l-primary bg-primary/5' : ''
                     }`}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      setTransactionToDelete(expense)
-                      setDeleteModalOpen(true)
-                    }}
-                    onTouchStart={() => {
-                      const timer = setTimeout(() => {
-                        setTransactionToDelete(expense)
-                        setDeleteModalOpen(true)
-                      }, 800)
-                      setLongPressTimer(timer)
-                    }}
-                    onTouchEnd={() => {
-                      if (longPressTimer) {
-                        clearTimeout(longPressTimer)
-                        setLongPressTimer(null)
-                      }
-                    }}
-                    onMouseDown={() => {
-                      const timer = setTimeout(() => {
-                        setTransactionToDelete(expense)
-                        setDeleteModalOpen(true)
-                      }, 800)
-                      setLongPressTimer(timer)
-                    }}
-                    onMouseUp={() => {
-                      if (longPressTimer) {
-                        clearTimeout(longPressTimer)
-                        setLongPressTimer(null)
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      if (longPressTimer) {
-                        clearTimeout(longPressTimer)
-                        setLongPressTimer(null)
-                      }
-                    }}
                   >
                     <div className="flex items-center gap-3">
                       {(() => {
@@ -584,17 +640,42 @@ export function Dashboard() {
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`font-semibold font-mono-amount ${
-                        expense.transaction_type === 'income' ? 'text-success' : 
-                        expense.transaction_type === 'savings' ? 'text-primary' : 'text-destructive'
-                      }`}>
-                        {expense.transaction_type === 'income' ? '+' : ''}
-                        {showUsd 
-                          ? formatCurrency(Math.round(Math.abs(expense.amount_cents) / exchangeRate), 'USD') 
-                          : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
-                        }
-                      </p>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <div className="text-right">
+                        <p className={`font-semibold font-mono-amount ${
+                          expense.transaction_type === 'income' ? 'text-success' :
+                          expense.transaction_type === 'savings' ? 'text-primary' : 'text-destructive'
+                        }`}>
+                          {expense.transaction_type === 'income' ? '+' : ''}
+                          {showUsd
+                            ? formatCurrency(Math.round(Math.abs(expense.amount_cents) / exchangeRate), 'USD')
+                            : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
+                          }
+                        </p>
+                      </div>
+                      {!expense._isInstallmentGroup && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingExpense(expense)}
+                          className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                          title="Editar transacción"
+                          aria-label="Editar transacción"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransactionToDelete(expense)
+                          setDeleteModalOpen(true)
+                        }}
+                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                        title="Eliminar transacción"
+                        aria-label="Eliminar transacción"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -605,7 +686,10 @@ export function Dashboard() {
           {/* Floating Add Button */}
           <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-20">
             <Button
-              onClick={() => setIsTransactionModalOpen(true)}
+              onClick={() => {
+                setEditingExpense(null)
+                setIsTransactionModalOpen(true)
+              }}
               size="lg"
               className="w-14 h-14 rounded-full bg-primary hover:opacity-90 text-primary-foreground shadow-lg glow-primary transition-all"
             >
@@ -613,12 +697,16 @@ export function Dashboard() {
             </Button>
           </div>
 
-          {/* Add Transaction Modal */}
+          {/* Add/Edit Transaction Modal */}
           <AddTransactionModal
-            isOpen={isTransactionModalOpen}
-            onClose={() => setIsTransactionModalOpen(false)}
+            isOpen={isTransactionModalOpen || !!editingExpense}
+            onClose={() => {
+              setIsTransactionModalOpen(false)
+              setEditingExpense(null)
+            }}
             onSuccess={reloadData}
             categories={categories}
+            editingExpense={editingExpense}
           />
 
           {/* Budget Manager */}

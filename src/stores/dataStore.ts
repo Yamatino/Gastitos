@@ -5,6 +5,7 @@ import {
   fetchExpenses as apiFetchExpenses,
   fetchCategories as apiFetchCategories,
   createExpense as apiCreateExpense,
+  updateExpense as apiUpdateExpense,
   createInstallments as apiCreateInstallments,
   createCategory as apiCreateCategory,
   deleteCategory as apiDeleteCategory,
@@ -33,6 +34,10 @@ interface DataState {
   
   // Create operations
   addExpense: (expenseData: Omit<Expense, 'id' | 'created_at' | 'updated_at'>) => Promise<Expense>
+  updateExpense: (id: string, updates: Partial<Omit<Expense, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'original_currency' | 'original_amount_cents'>> & {
+    original_currency?: 'ARS' | 'USD' | null
+    original_amount_cents?: number | null
+  }) => Promise<Expense>
   addInstallments: (params: {
     userId: string
     description: string
@@ -129,6 +134,20 @@ export const useDataStore = create<DataState>()((set, get) => ({
     }
   },
   
+  updateExpense: async (id, updates) => {
+    try {
+      const updated = await apiUpdateExpense(id, updates)
+      set((state) => ({
+        expenses: state.expenses.map((e) => (e.id === id ? updated : e))
+      }))
+      return updated
+    } catch (error) {
+      console.error('Error updating expense:', error)
+      showErrorAlert(error, 'Error al actualizar transacción')
+      throw error
+    }
+  },
+
   addInstallments: async (params) => {
     try {
       await apiCreateInstallments(

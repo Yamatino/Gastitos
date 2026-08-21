@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUserStore } from '../stores/userStore'
 import { useDataStore } from '../stores/dataStore'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { X, CreditCard, Wallet, TrendingUp, PiggyBank, ChevronDown } from 'lucide-react'
-import type { Category } from '../services/supabase'
+import type { Category, Expense } from '../services/supabase'
 import { sanitizeDescription } from '../lib/validation'
 import { useToastStore } from '../stores/toastStore'
 
@@ -33,12 +33,14 @@ interface AddTransactionModalProps {
   onClose: () => void
   onSuccess: () => void
   categories: Category[]
+  editingExpense?: Expense | null
 }
 
-export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: AddTransactionModalProps) {
+export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, editingExpense = null }: AddTransactionModalProps) {
   const { user, exchangeRate } = useUserStore()
-  const { addExpense, addInstallments } = useDataStore()
-  
+  const { addExpense, addInstallments, updateExpense } = useDataStore()
+  const isEditMode = !!editingExpense
+
   const [activeTab, setActiveTab] = useState<TransactionType>('expense')
   
   // Common fields
@@ -64,19 +66,8 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
   const [isSalary, setIsSalary] = useState(false)
   const [countForNextMonth, setCountForNextMonth] = useState(false)
 
-  if (!isOpen) return null
-
-  const handleTabChange = (tab: TransactionType) => {
-    setActiveTab(tab)
-    setCategoryId('')
-    setShowCategoryDropdown(false)
-    // Reset tab-specific fields
-    if (tab === 'income') {
-      setIsSalary(false)
-    }
-  }
-
   const resetForm = () => {
+    setActiveTab('expense')
     setAmount('')
     setDescription('')
     setCategoryId('')
@@ -92,12 +83,56 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
     setSelectedDate(`${year}-${month}-${day}`)
   }
 
+  // Populate the form when opening in edit mode, or clear it when opening fresh
+  useEffect(() => {
+    if (!isOpen) return
+
+    if (editingExpense) {
+      const originalCents = editingExpense.original_currency === 'USD' && editingExpense.original_amount_cents != null
+        ? editingExpense.original_amount_cents
+        : Math.abs(editingExpense.amount_cents)
+
+      setActiveTab(editingExpense.transaction_type)
+      setAmount(formatNumberWithDots(String(Math.round(originalCents / 100))))
+      setDescription(editingExpense.description)
+      setCategoryId(editingExpense.category_id || '')
+      setSelectedDate(editingExpense.date)
+      setCurrency(editingExpense.original_currency === 'USD' ? 'USD' : 'ARS')
+      setPaymentMethod(editingExpense.payment_method)
+      setInstallments(1)
+      setIsSalary(editingExpense.is_salary)
+      setCountForNextMonth(false)
+      setShowCategoryDropdown(false)
+    } else {
+      resetForm()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, editingExpense])
+
+  if (!isOpen) return null
+
+  const handleTabChange = (tab: TransactionType) => {
+    if (isEditMode) return
+    setActiveTab(tab)
+    setCategoryId('')
+    setShowCategoryDropdown(false)
+    // Reset tab-specific fields
+    if (tab === 'income') {
+      setIsSalary(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Validation
-    if (!amount || !rawDescription) {
-      useToastStore.getState().addToast('Por favor completa todos los campos requeridos')
+    // Validation (field-specific so it's clear what's missing)
+    if (!amount) {
+      useToastStore.getState().addToast('Por favor ingresá un monto')
+      return
+    }
+
+    if (!rawDescription) {
+      useToastStore.getState().addToast('Por favor ingresá una descripción')
       return
     }
 
@@ -144,11 +179,25 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           return
         }
 
-        if (paymentMethod === 'credit' && installments > 1) {
+        if (isEditMode && editingExpense) {
+          // Editing never touches installment plans (grouped rows aren't editable)
+          await updateExpense(editingExpense.id, {
+            description,
+            amount_cents: amountCents,
+            currency: 'ARS',
+            exchange_rate: exchangeRate,
+            usd_amount_cents: usdAmountCents,
+            original_currency: currency === 'USD' ? 'USD' : null,
+            original_amount_cents: originalAmountCents ?? null,
+            category_id: categoryId || null,
+            payment_method: paymentMethod,
+            date: selectedDate,
+          })
+        } else if (paymentMethod === 'credit' && installments > 1) {
           // Use stored procedure for installments
           const savedBillingDay = localStorage.getItem('defaultBillingDay')
           const billingDayFromSettings = savedBillingDay ? parseInt(savedBillingDay) : 10
-          
+
           await addInstallments({
             userId: user.id,
             description,
@@ -201,25 +250,35 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           return
         }
 
-        await addExpense({
-          user_id: user.id,
-          description,
-          amount_cents: -amountCents, // Negative for income
-          currency: 'ARS',
-          exchange_rate: exchangeRate,
-          usd_amount_cents: -usdAmountCents,
-          category_id: null, // No category for income
-          payment_method: 'debit',
-          date: selectedDate,
-          transaction_type: 'income',
-          is_salary: isSalary,
-          is_installment: false,
-          status: 'paid',
-          installment_group_id: null,
-          installment_number: null,
-          total_installments: null,
-          installment_amount_cents: null
-        })
+        if (isEditMode && editingExpense) {
+          await updateExpense(editingExpense.id, {
+            description,
+            amount_cents: -amountCents, // Negative for income
+            usd_amount_cents: -usdAmountCents,
+            date: selectedDate,
+            is_salary: isSalary,
+          })
+        } else {
+          await addExpense({
+            user_id: user.id,
+            description,
+            amount_cents: -amountCents, // Negative for income
+            currency: 'ARS',
+            exchange_rate: exchangeRate,
+            usd_amount_cents: -usdAmountCents,
+            category_id: null, // No category for income
+            payment_method: 'debit',
+            date: selectedDate,
+            transaction_type: 'income',
+            is_salary: isSalary,
+            is_installment: false,
+            status: 'paid',
+            installment_group_id: null,
+            installment_number: null,
+            total_installments: null,
+            installment_amount_cents: null
+          })
+        }
       } else {
         // Handle savings
         const amountCents = Math.round(rawAmount * 100)
@@ -236,32 +295,41 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
           return
         }
 
-        await addExpense({
-          user_id: user.id,
-          description,
-          amount_cents: amountCents,
-          currency: 'ARS',
-          exchange_rate: exchangeRate,
-          usd_amount_cents: usdAmountCents,
-          category_id: null, // No category for savings
-          payment_method: 'debit',
-          date: selectedDate,
-          transaction_type: 'savings',
-          is_installment: false,
-          status: 'paid',
-          installment_group_id: null,
-          installment_number: null,
-          total_installments: null,
-          installment_amount_cents: null,
-          is_salary: false
-        })
+        if (isEditMode && editingExpense) {
+          await updateExpense(editingExpense.id, {
+            description,
+            amount_cents: amountCents,
+            usd_amount_cents: usdAmountCents,
+            date: selectedDate,
+          })
+        } else {
+          await addExpense({
+            user_id: user.id,
+            description,
+            amount_cents: amountCents,
+            currency: 'ARS',
+            exchange_rate: exchangeRate,
+            usd_amount_cents: usdAmountCents,
+            category_id: null, // No category for savings
+            payment_method: 'debit',
+            date: selectedDate,
+            transaction_type: 'savings',
+            is_installment: false,
+            status: 'paid',
+            installment_group_id: null,
+            installment_number: null,
+            total_installments: null,
+            installment_amount_cents: null,
+            is_salary: false
+          })
+        }
       }
 
       resetForm()
       onSuccess()
       onClose()
     } catch (err) {
-      console.error('Error adding transaction:', err)
+      console.error('Error saving transaction:', err)
       // Error is already shown via alert in the store
     } finally {
       setIsLoading(false)
@@ -288,6 +356,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
 
   const getSubmitButtonText = () => {
     if (isLoading) return 'Guardando...'
+    if (isEditMode) return '💾 Guardar Cambios'
     switch (activeTab) {
       case 'expense': return '💾 Guardar Gasto'
       case 'income': return '💾 Guardar Ingreso'
@@ -332,7 +401,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
         {/* Header with Tabs */}
         <div className="border-b border-border">
           <div className="flex items-center justify-between p-4 pb-2">
-            <h2 className="text-xl font-bold text-foreground">Nueva Transacción</h2>
+            <h2 className="text-xl font-bold text-foreground">{isEditMode ? 'Editar Transacción' : 'Nueva Transacción'}</h2>
             <button
               onClick={onClose}
               className="p-2 hover:bg-muted rounded-full transition-colors"
@@ -347,6 +416,8 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
               <button
                 key={tab}
                 onClick={() => handleTabChange(tab)}
+                disabled={isEditMode && activeTab !== tab}
+                title={isEditMode && activeTab !== tab ? 'El tipo no se puede cambiar al editar' : undefined}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-t-lg text-sm font-medium transition-all ${
                   activeTab === tab
                     ? tab === 'expense'
@@ -354,6 +425,8 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
                       : tab === 'income'
                       ? 'bg-success text-white'
                       : 'bg-primary text-white'
+                    : isEditMode
+                    ? 'text-muted-foreground/40 cursor-not-allowed'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
               >
@@ -580,8 +653,8 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories }: 
                 </div>
               )}
 
-              {/* Installments (only for credit expenses) */}
-              {activeTab === 'expense' && paymentMethod === 'credit' && (
+              {/* Installments (only for credit expenses, not available when editing) */}
+              {activeTab === 'expense' && paymentMethod === 'credit' && !isEditMode && (
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">
                     Cantidad de cuotas

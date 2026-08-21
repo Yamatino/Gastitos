@@ -98,8 +98,6 @@ export const useUIStore = create<UIState>()(
       name: 'gastitos-ui-storage',
       partialize: (state) => ({
         activeTab: state.activeTab,
-        selectedMonth: state.selectedMonth,
-        selectedYear: state.selectedYear,
         showInstallments: state.showInstallments,
       }),
     }

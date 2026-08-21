@@ -11,24 +11,34 @@ export function Toaster() {
       {toasts.map((toast) => (
         <ToastPrimitive.Root
           key={toast.id}
+          duration={toast.duration}
           onOpenChange={(open) => {
             if (!open) removeToast(toast.id)
           }}
           className={cn(
-            'flex items-start gap-3 rounded-xl border p-4 shadow-lg bg-card text-card-foreground border-border',
+            'flex items-center gap-3 rounded-xl border p-4 shadow-lg bg-card text-card-foreground border-border',
             'data-[state=open]:animate-in data-[state=open]:slide-in-from-top-full sm:data-[state=open]:slide-in-from-bottom-full',
             'data-[state=closed]:animate-out data-[state=closed]:fade-out-80',
             'data-[swipe=end]:animate-out'
           )}
         >
           {toast.variant === 'error' ? (
-            <XCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+            <XCircle className="w-5 h-5 text-destructive shrink-0" />
           ) : (
-            <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
+            <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
           )}
           <ToastPrimitive.Description className="text-sm flex-1">
             {toast.message}
           </ToastPrimitive.Description>
+          {toast.action && (
+            <ToastPrimitive.Action
+              altText={toast.action.label}
+              onClick={toast.action.onClick}
+              className="shrink-0 text-sm font-semibold text-primary hover:underline"
+            >
+              {toast.action.label}
+            </ToastPrimitive.Action>
+          )}
           <ToastPrimitive.Close aria-label="Cerrar" className="shrink-0 text-muted-foreground hover:text-foreground">
             <X className="w-4 h-4" />
           </ToastPrimitive.Close>
