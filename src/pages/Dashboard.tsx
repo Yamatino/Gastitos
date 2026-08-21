@@ -56,6 +56,9 @@ export function Dashboard() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [pendingDeleteKeys, setPendingDeleteKeys] = useState<Set<string>>(new Set())
   const pendingDeleteTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const [rowMenu, setRowMenu] = useState<{ expense: Expense & { _isInstallmentGroup?: boolean }; x: number; y: number } | null>(null)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null)
   // Get store references
   const dataStore = useDataStore()
 
@@ -169,6 +172,7 @@ export function Dashboard() {
   useEffect(() => {
     return () => {
       pendingDeleteTimers.current.forEach(timer => clearTimeout(timer))
+      if (longPressTimer.current) clearTimeout(longPressTimer.current)
     }
   }, [])
 
@@ -202,6 +206,48 @@ export function Dashboard() {
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+  }
+
+  // Row actions (edit/delete) are tucked behind a right-click / long-press
+  // menu instead of always-visible icons, to keep each row uncluttered.
+  const openRowMenu = (expense: Expense & { _isInstallmentGroup?: boolean }, x: number, y: number) => {
+    const menuWidth = 176
+    const menuHeight = expense._isInstallmentGroup ? 52 : 96
+    const clampedX = Math.min(x, window.innerWidth - menuWidth - 8)
+    const clampedY = Math.min(y, window.innerHeight - menuHeight - 8)
+    setRowMenu({ expense, x: Math.max(8, clampedX), y: Math.max(8, clampedY) })
+  }
+
+  const closeRowMenu = () => setRowMenu(null)
+
+  const clearLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+    touchStartPos.current = null
+  }
+
+  const handleRowContextMenu = (expense: Expense) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    openRowMenu(expense, e.clientX, e.clientY)
+  }
+
+  const handleRowTouchStart = (expense: Expense) => (e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY }
+    longPressTimer.current = setTimeout(() => {
+      openRowMenu(expense, touch.clientX, touch.clientY)
+      longPressTimer.current = null
+    }, 550)
+  }
+
+  const handleRowTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartPos.current) return
+    const touch = e.touches[0]
+    const dx = Math.abs(touch.clientX - touchStartPos.current.x)
+    const dy = Math.abs(touch.clientY - touchStartPos.current.y)
+    if (dx > 10 || dy > 10) clearLongPress()
   }
 
   const changeMonth = (delta: number) => {
@@ -581,9 +627,15 @@ export function Dashboard() {
                  ).map((expense) => (
                   <div
                     key={expense.id}
-                    className={`p-4 flex items-center justify-between hover:bg-muted/50 relative group transition-colors ${
+                    className={`p-4 flex items-center justify-between hover:bg-muted/50 relative group transition-colors select-none ${
                       expense._isInstallmentGroup ? 'border-l-4 border-l-primary bg-primary/5' : ''
                     }`}
+                    style={{ WebkitTouchCallout: 'none' }}
+                    onContextMenu={handleRowContextMenu(expense)}
+                    onTouchStart={handleRowTouchStart(expense)}
+                    onTouchMove={handleRowTouchMove}
+                    onTouchEnd={clearLongPress}
+                    onTouchCancel={clearLongPress}
                   >
                     <div className="flex items-center gap-3">
                       {(() => {
@@ -640,48 +692,67 @@ export function Dashboard() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <div className="text-right">
-                        <p className={`font-semibold font-mono-amount ${
-                          expense.transaction_type === 'income' ? 'text-success' :
-                          expense.transaction_type === 'savings' ? 'text-primary' : 'text-destructive'
-                        }`}>
-                          {expense.transaction_type === 'income' ? '+' : ''}
-                          {showUsd
-                            ? formatCurrency(Math.round(Math.abs(expense.amount_cents) / exchangeRate), 'USD')
-                            : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
-                          }
-                        </p>
-                      </div>
-                      {!expense._isInstallmentGroup && (
-                        <button
-                          type="button"
-                          onClick={() => setEditingExpense(expense)}
-                          className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                          title="Editar transacción"
-                          aria-label="Editar transacción"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTransactionToDelete(expense)
-                          setDeleteModalOpen(true)
-                        }}
-                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                        title="Eliminar transacción"
-                        aria-label="Eliminar transacción"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <div className="text-right">
+                      <p className={`font-semibold font-mono-amount ${
+                        expense.transaction_type === 'income' ? 'text-success' :
+                        expense.transaction_type === 'savings' ? 'text-primary' : 'text-destructive'
+                      }`}>
+                        {expense.transaction_type === 'income' ? '+' : ''}
+                        {showUsd
+                          ? formatCurrency(Math.round(Math.abs(expense.amount_cents) / exchangeRate), 'USD')
+                          : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
+                        }
+                      </p>
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+
+          {/* Row action menu (right-click / long-press) */}
+          {rowMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={closeRowMenu}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  closeRowMenu()
+                }}
+              />
+              <div
+                className="fixed z-50 w-44 glass-card rounded-xl border border-border shadow-2xl overflow-hidden py-1"
+                style={{ left: rowMenu.x, top: rowMenu.y }}
+              >
+                {!rowMenu.expense._isInstallmentGroup && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingExpense(rowMenu.expense)
+                      closeRowMenu()
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                  >
+                    <Pencil className="w-4 h-4 text-primary" />
+                    Editar
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTransactionToDelete(rowMenu.expense)
+                    setDeleteModalOpen(true)
+                    closeRowMenu()
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Eliminar
+                </button>
+              </div>
+            </>
+          )}
 
           {/* Floating Add Button */}
           <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-20">
