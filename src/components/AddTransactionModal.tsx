@@ -1,14 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useUserStore } from '../stores/userStore'
 import { useDataStore } from '../stores/dataStore'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { X, CreditCard, Wallet, TrendingUp, PiggyBank, ChevronDown } from 'lucide-react'
+import { X, CreditCard, Wallet, TrendingUp, PiggyBank } from 'lucide-react'
 import type { Category, Expense } from '../services/supabase'
 import { sanitizeDescription } from '../lib/validation'
 import { toDateKey } from '../lib/dateBuckets'
-import { fetchExchangeRate } from '../lib/api'
+import {
+  buildDescriptionIndex,
+  categoryForDescription,
+  lastUsedCategoryId,
+  orderCategoriesByUsage,
+  suggestDescriptions,
+  type DescriptionSuggestion,
+} from '../lib/entrySuggestions'
+import { fetchExchangeRate, type RecurringInput } from '../lib/api'
 import { useToastStore } from '../stores/toastStore'
 
 type TransactionType = 'expense' | 'income' | 'savings'
@@ -41,7 +49,7 @@ interface AddTransactionModalProps {
 
 export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, editingExpense = null }: AddTransactionModalProps) {
   const { user, exchangeRate, exchangeRateAvailable, setExchangeRate, billingDay } = useUserStore()
-  const { addExpense, addInstallments, updateExpense } = useDataStore()
+  const { addExpense, addInstallments, updateExpense, addRecurring, expenses } = useDataStore()
   const isEditMode = !!editingExpense
 
   const [activeTab, setActiveTab] = useState<TransactionType>('expense')
@@ -51,7 +59,8 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
   const [rawDescription, setDescription] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
+  // Once the user taps a category, typing a description no longer changes it
+  const [userPickedCategory, setUserPickedCategory] = useState(false)
   const [selectedDate, setSelectedDate] = useState(() => toDateKey())
   const [currency, setCurrency] = useState<'ARS' | 'USD'>('ARS')
   
@@ -62,16 +71,27 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
   // Income-specific fields
   const [isSalary, setIsSalary] = useState(false)
   const [countForNextMonth, setCountForNextMonth] = useState(false)
+  // "Repetir todos los meses": also save it as a recurring transaction
+  const [repeatMonthly, setRepeatMonthly] = useState(false)
+
+  // Learned from past entries: description suggestions and category order
+  const descriptionIndex = useMemo(() => buildDescriptionIndex(expenses, activeTab), [expenses, activeTab])
+  const orderedCategories = useMemo(() => orderCategoriesByUsage(categories, expenses), [categories, expenses])
+  const suggestions = suggestDescriptions(descriptionIndex, rawDescription)
+  const defaultCategoryId = () => lastUsedCategoryId(expenses, categories) ?? ''
 
   const resetForm = () => {
     setActiveTab('expense')
     setAmount('')
     setDescription('')
-    setCategoryId('')
+    // Preselect the last category used; it shows highlighted and is one tap to change
+    setCategoryId(defaultCategoryId())
+    setUserPickedCategory(false)
     setPaymentMethod('debit')
     setInstallments(1)
     setIsSalary(false)
     setCountForNextMonth(false)
+    setRepeatMonthly(false)
     setCurrency('ARS')
     setSelectedDate(toDateKey())
   }
@@ -95,7 +115,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
       setInstallments(1)
       setIsSalary(editingExpense.is_salary)
       setCountForNextMonth(false)
-      setShowCategoryDropdown(false)
+      setUserPickedCategory(true)
     } else {
       resetForm()
     }
@@ -107,11 +127,27 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
   const handleTabChange = (tab: TransactionType) => {
     if (isEditMode) return
     setActiveTab(tab)
-    setCategoryId('')
-    setShowCategoryDropdown(false)
+    setCategoryId(tab === 'expense' ? defaultCategoryId() : '')
+    setUserPickedCategory(false)
     // Reset tab-specific fields
     if (tab === 'income') {
       setIsSalary(false)
+    }
+  }
+
+  const handleDescriptionChange = (text: string) => {
+    setDescription(text)
+    // A description used before brings back its usual category (unless one was tapped)
+    if (activeTab === 'expense' && !userPickedCategory) {
+      const remembered = categoryForDescription(descriptionIndex, text)
+      if (remembered && categories.some((c) => c.id === remembered)) setCategoryId(remembered)
+    }
+  }
+
+  const applySuggestion = (suggestion: DescriptionSuggestion) => {
+    setDescription(suggestion.description)
+    if (activeTab === 'expense' && !userPickedCategory && suggestion.categoryId && categories.some((c) => c.id === suggestion.categoryId)) {
+      setCategoryId(suggestion.categoryId)
     }
   }
 
@@ -156,6 +192,24 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
         }
         setExchangeRate(freshRate)
         rate = freshRate
+      }
+
+      // "Repetir todos los meses": save the template first, then link this entry to it
+      // as this month's confirmation, so the month isn't listed again as pending
+      const recurringLink = async (
+        template: Pick<RecurringInput, 'amount_cents' | 'currency' | 'transaction_type' | 'category_id' | 'payment_method' | 'is_salary'>
+      ) => {
+        if (!repeatMonthly || isEditMode) return {}
+        const period = selectedDate.slice(0, 7)
+        const created = await addRecurring(user.id, {
+          ...template,
+          description,
+          day_of_month: parseInt(selectedDate.slice(8, 10)),
+          start_period: period,
+          skipped_periods: [],
+          active: true,
+        })
+        return { recurring_id: created.id, recurring_period: period }
       }
 
       if (activeTab === 'expense') {
@@ -210,7 +264,16 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
           })
         } else {
           // Single expense
+          const link = await recurringLink({
+            amount_cents: originalAmountCents ?? amountCents,
+            currency,
+            transaction_type: 'expense',
+            category_id: categoryId,
+            payment_method: paymentMethod,
+            is_salary: false,
+          })
           await addExpense({
+            ...link,
             user_id: user.id,
             description,
             amount_cents: amountCents,
@@ -251,7 +314,16 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
             is_salary: isSalary,
           })
         } else {
+          const link = await recurringLink({
+            amount_cents: amountCents,
+            currency: 'ARS',
+            transaction_type: 'income',
+            category_id: null,
+            payment_method: 'debit',
+            is_salary: isSalary,
+          })
           await addExpense({
+            ...link,
             user_id: user.id,
             description,
             amount_cents: -amountCents, // Negative for income
@@ -289,7 +361,16 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
             date: selectedDate,
           })
         } else {
+          const link = await recurringLink({
+            amount_cents: amountCents,
+            currency: 'ARS',
+            transaction_type: 'savings',
+            category_id: null,
+            payment_method: 'debit',
+            is_salary: false,
+          })
           await addExpense({
+            ...link,
             user_id: user.id,
             description,
             amount_cents: amountCents,
@@ -322,7 +403,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
     }
   }
 
-  const selectedCategory = categories.find(c => c.id === categoryId)
 
   const getTabIcon = (tab: TransactionType) => {
     switch (tab) {
@@ -495,11 +575,26 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
                 <Input
                   type="text"
                   value={rawDescription}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => handleDescriptionChange(e.target.value)}
                   placeholder={activeTab === 'expense' ? 'Ej: Cena con amigos' : activeTab === 'income' ? 'Ej: Sueldo mensual' : 'Ej: Ahorro de emergencia'}
                   className="bg-background"
+                  autoComplete="off"
                   required
                 />
+                {suggestions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2" aria-label="Sugerencias">
+                    {suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion.description}
+                        type="button"
+                        onClick={() => applySuggestion(suggestion)}
+                        className="px-3 py-1 rounded-full text-sm bg-muted text-foreground border border-border hover:bg-muted/70 transition-colors"
+                      >
+                        {suggestion.description}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Date */}
@@ -564,42 +659,34 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
                 </div>
               )}
 
-              {/* Category (only for expenses) */}
+              {/* Category (only for expenses): one-tap chips, most used first */}
               {activeTab === 'expense' && (
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">
-                    Categoría
-                  </label>
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                      className="w-full flex items-center justify-between px-3 py-2 border border-input rounded-md bg-background text-left text-foreground"
-                    >
-                      <span className={selectedCategory ? 'text-foreground' : 'text-muted-foreground'}>
-                        {selectedCategory ? selectedCategory.name : 'Seleccionar categoría'}
-                      </span>
-                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                    
-                    {showCategoryDropdown && (
-                      <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-md shadow-lg z-10 max-h-48 overflow-y-auto">
-                        {categories.map((category) => (
-                          <button
-                            key={category.id}
-                            type="button"
-                            onClick={() => {
-                              setCategoryId(category.id)
-                              setShowCategoryDropdown(false)
-                            }}
-                            className="w-full px-3 py-2 text-left hover:bg-muted flex items-center gap-2 text-foreground"
-                          >
-                            <span>{category.icon}</span>
-                            <span>{category.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                  <p className="block text-sm font-medium text-foreground mb-2">Categoría</p>
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Categoría">
+                    {orderedCategories.map((category) => {
+                      const selected = category.id === categoryId
+                      return (
+                        <button
+                          key={category.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => {
+                            setCategoryId(category.id)
+                            setUserPickedCategory(true)
+                          }}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                            selected
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-background text-foreground border-input hover:bg-muted'
+                          }`}
+                        >
+                          <span>{category.icon}</span>
+                          <span>{category.name}</span>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -666,7 +753,23 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
                 </div>
               )}
 
-
+              {/* Not for installment plans: those already span several months */}
+              {!isEditMode && !(activeTab === 'expense' && paymentMethod === 'credit' && installments > 1) && (
+                <label className="flex items-center gap-3 p-3 bg-secondary rounded-xl border border-border cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={repeatMonthly}
+                    onChange={(e) => setRepeatMonthly(e.target.checked)}
+                    className="w-5 h-5 rounded bg-background border-input accent-primary"
+                  />
+                  <span className="flex-1">
+                    <span className="block text-sm font-medium text-foreground">Repetir todos los meses</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Cada mes te lo vamos a recordar para confirmarlo con un toque
+                    </span>
+                  </span>
+                </label>
+              )}
             </motion.div>
           </AnimatePresence>
 

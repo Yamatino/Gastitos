@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Button } from './ui/button'
-import { MoreHorizontal, Target, Download } from 'lucide-react'
+import { MoreHorizontal, Target, Download, Repeat } from 'lucide-react'
 
 interface MoreActionsMenuProps {
   onBudgetsClick: () => void
+  onRecurringClick: () => void
   onExportClick: () => void
 }
 
-export function MoreActionsMenu({ onBudgetsClick, onExportClick }: MoreActionsMenuProps) {
+export function MoreActionsMenu({ onBudgetsClick, onRecurringClick, onExportClick }: MoreActionsMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   const handleAction = (action: () => void) => {
@@ -47,6 +48,19 @@ export function MoreActionsMenu({ onBudgetsClick, onExportClick }: MoreActionsMe
                 <div className="flex-1">
                   <span className="text-sm font-medium text-foreground block">Presupuestos</span>
                   <span className="text-xs text-muted-foreground">Administrar límites</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleAction(onRecurringClick)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-muted transition-colors group"
+              >
+                <div className="p-1.5 bg-primary/10 rounded-lg group-hover:bg-primary/20">
+                  <Repeat className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-sm font-medium text-foreground block">Gastos fijos</span>
+                  <span className="text-xs text-muted-foreground">Alquiler, servicios, suscripciones</span>
                 </div>
               </button>
 

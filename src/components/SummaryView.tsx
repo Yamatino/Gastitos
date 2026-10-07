@@ -1,267 +1,235 @@
-import { useState, useEffect, useMemo } from 'react'
-import { startOfMonth, subMonths } from 'date-fns'
+import { useState, useEffect, type ReactNode } from 'react'
+import { addMonths, format, startOfMonth, subMonths } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { useUserStore } from '../stores/userStore'
 import { useDataStore } from '../stores/dataStore'
 import { useUIStore } from '../stores/uiStore'
-import { formatCurrency, toDisplayCurrency } from '../lib/utils'
-import { supabase } from '../services/supabase'
+import { formatCurrency, toUsdCents } from '../lib/utils'
+import { supabase, type Expense } from '../services/supabase'
 import { getTrailingMonths, getUpcomingMonths, isInMonth, parseExpenseDate, toDateKey } from '../lib/dateBuckets'
 import { getActiveInstallmentGroups, isInstallmentPending } from '../lib/installments'
 import { aggregateByCategory, getCurrentMonthExpenseByCategory } from '../lib/categoryAggregation'
+import { categorySpendWithChange, percentChange, summarizeMonth, type Valuer } from '../lib/monthStats'
 import { getChartColors } from '../lib/chartTheme'
 import { Button } from './ui/button'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  LineChart, Line
 } from 'recharts'
-import { CreditCard, TrendingUp, Trash2, Package, CalendarDays, PiggyBank, Target } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CreditCard, PiggyBank, Tags, Target, Trash2, TrendingUp, Wallet } from 'lucide-react'
 import { fetchInflationData, type ProcessedInflation } from '../services/inflation'
 import { useToastStore } from '../stores/toastStore'
 
 type CategoryPeriod = 'month' | '3months' | 'all'
 
+const PERIOD_LABELS: Record<CategoryPeriod, string> = {
+  month: 'Mes',
+  '3months': '3 meses',
+  all: 'Todo',
+}
+
+// Installment plans listed before "Ver todas"
+const PLANS_PREVIEW = 3
+
 // Compact axis ticks ("1,8 M", "500 mil") so large peso amounts fit the narrow Y axis
 const compactAxisFormatter = new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFractionDigits: 1 })
 const formatAxisTick = (value: number) => compactAxisFormatter.format(value)
 
-const CATEGORY_PERIOD_LABELS: Record<CategoryPeriod, string> = {
-  month: 'Este mes',
-  '3months': 'Últimos 3 meses',
-  all: 'Todo',
+const stripInstallmentSuffix = (description: string) => description.replace(/\s*\(\d+\/\d+\)$/, '')
+const monthName = (date: Date) => format(date, 'MMMM', { locale: es })
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
+
+function Card({ children }: { children: ReactNode }) {
+  return <section className="glass-card rounded-2xl p-4 sm:p-6">{children}</section>
+}
+
+function CardTitle({ icon, title, aside }: { icon: ReactNode; title: string; aside?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 mb-4">
+      <div className="flex items-center gap-2 min-w-0">
+        {icon}
+        <h3 className="text-base sm:text-lg font-semibold text-foreground truncate">{title}</h3>
+      </div>
+      {aside}
+    </div>
+  )
+}
+
+/** ▲/▼ chip for spending changes: more spending is shown as bad, less as good. */
+function ChangeChip({ percent }: { percent: number | null }) {
+  // Under 1% would render as a meaningless "▲ 0%"
+  if (percent === null || !Number.isFinite(percent) || Math.abs(percent) < 1) return null
+  const up = percent > 0
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 shrink-0 whitespace-nowrap text-xs font-semibold px-2 py-0.5 rounded-full ${
+        up ? 'bg-destructive/15 text-destructive' : 'bg-success/15 text-success'
+      }`}
+    >
+      {up ? '▲' : '▼'} {Math.abs(percent).toFixed(0)}%
+    </span>
+  )
+}
+
+function ProgressBar({ percent, tone }: { percent: number; tone: 'success' | 'warning' | 'destructive' | 'primary' }) {
+  const color = { success: 'bg-success', warning: 'bg-warning', destructive: 'bg-destructive', primary: 'bg-primary' }[tone]
+  return (
+    <div className="h-2 bg-muted rounded-full overflow-hidden">
+      <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(Math.max(percent, 0), 100)}%` }} />
+    </div>
+  )
+}
+
+/** One label/amount row inside a StatList (rows never truncate amounts, unlike side-by-side tiles). */
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3 px-3 py-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold text-foreground font-amount">{value}</span>
+    </div>
+  )
+}
+
+function StatList({ children }: { children: ReactNode }) {
+  return <div className="mt-4 bg-muted/40 rounded-xl divide-y divide-border">{children}</div>
 }
 
 export function SummaryView() {
-  const { exchangeRate, showUsd, budgets } = useUserStore()
+  const { exchangeRate, showUsd, budgets, monthlySavingsGoalUSD } = useUserStore()
   const { expenses, categories } = useDataStore()
-  const { setIsBudgetManagerOpen } = useUIStore()
-  const [isLoading, setIsLoading] = useState(true)
+  const {
+    setIsBudgetManagerOpen,
+    setIsSettingsOpen,
+    selectedMonth,
+    selectedYear,
+    setSelectedMonth,
+    setSelectedYear,
+  } = useUIStore()
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [groupToDelete, setGroupToDelete] = useState<string | null>(null)
   const [inflationData, setInflationData] = useState<ProcessedInflation | null>(null)
-  const [isLoadingInflation, setIsLoadingInflation] = useState(true)
   const [categoryPeriod, setCategoryPeriod] = useState<CategoryPeriod>('month')
+  const [showAllPlans, setShowAllPlans] = useState(false)
 
+  // Inflation only feeds a footnote, so the rest of the page doesn't wait for it
   useEffect(() => {
-    setIsLoading(false)
-  }, [expenses])
-
-  useEffect(() => {
-    const loadInflation = async () => {
-      setIsLoadingInflation(true)
-      const data = await fetchInflationData()
-      setInflationData(data)
-      setIsLoadingInflation(false)
-    }
-
-    loadInflation()
+    fetchInflationData().then(setInflationData)
   }, [])
 
-  const fmt = (cents: number) => {
-    const { amount, currency } = toDisplayCurrency(cents, showUsd, exchangeRate)
-    return formatCurrency(amount, currency)
+  const today = new Date()
+  const todayKey = toDateKey(today)
+  const chartColors = getChartColors()
+
+  // Same month as the Gastos tab, so switching tabs keeps your place
+  const monthStart = new Date(selectedYear, selectedMonth, 1)
+  const isCurrentMonth = isInMonth(today, monthStart)
+  const previousMonthStart = subMonths(monthStart, 1)
+
+  const shiftMonth = (delta: number) => {
+    const target = addMonths(monthStart, delta)
+    setSelectedMonth(target.getMonth())
+    setSelectedYear(target.getFullYear())
+  }
+  const goToCurrentMonth = () => {
+    setSelectedMonth(today.getMonth())
+    setSelectedYear(today.getFullYear())
   }
 
-  const monthStart = useMemo(() => startOfMonth(new Date()), [])
-  const upcomingMonths = useMemo(() => getUpcomingMonths(3), [])
-  const chartColors = useMemo(() => getChartColors(), [])
+  // Amounts follow the ARS/USD toggle. USD uses each transaction's own rate (see toUsdCents).
+  const currency = showUsd ? 'USD' : 'ARS'
+  const value: Valuer = (e) => (showUsd ? toUsdCents(e, exchangeRate, todayKey) : Math.abs(e.amount_cents))
+  const fmt = (cents: number) => formatCurrency(cents, currency, true)
+  // Budgets are set in pesos, and purchasing power is a peso concept, so those stay in ARS
+  const fmtArs = (cents: number) => formatCurrency(cents, 'ARS', true)
+  const sumValues = (list: Expense[]) => list.reduce((acc, e) => acc + value(e), 0)
 
-  // Last 6 months income/expense series (drives the bar chart and several derived cards)
-  const last6Months = useMemo(() => {
-    return getTrailingMonths(6).map((bucket) => {
-      const monthExpenses = expenses.filter(
-        (e) => e.transaction_type === 'expense' && isInMonth(parseExpenseDate(e.date), bucket.monthStart)
-      )
-      const monthIncome = expenses.filter(
-        (e) => e.transaction_type === 'income' && isInMonth(parseExpenseDate(e.date), bucket.monthStart)
-      )
+  // ---- El mes ----
+  const summary = summarizeMonth(expenses, monthStart, value, today)
+  const spendChange = percentChange(summary.spentToDate, summary.previousSpent)
+  const incomeRatio = summary.income > 0 ? (summary.spent / summary.income) * 100 : null
+
+  // ---- Ahorro ----
+  const monthSavings = expenses.filter(
+    (e) => e.transaction_type === 'savings' && isInMonth(parseExpenseDate(e.date), monthStart)
+  )
+  const savingsRate = summary.income > 0 ? (summary.savings / summary.income) * 100 : null
+  const savingsUsdCents = monthSavings.reduce((acc, e) => acc + toUsdCents(e, exchangeRate, todayKey), 0)
+  const goalPercent = monthlySavingsGoalUSD > 0 ? (savingsUsdCents / 100 / monthlySavingsGoalUSD) * 100 : null
+
+  // ---- Presupuestos ----
+  const spendByCategory = getCurrentMonthExpenseByCategory(expenses, categories, monthStart)
+  const budgetProgress = Object.entries(budgets)
+    .map(([categoryId, budgetCents]) => {
+      const category = categories.find((c) => c.id === categoryId)
+      const spentCents = spendByCategory.get(categoryId) || 0
       return {
-        key: bucket.key,
-        name: bucket.label,
-        incomeCents: monthIncome.reduce((sum, e) => sum + Math.abs(e.amount_cents), 0),
-        expensesCents: monthExpenses.reduce((sum, e) => sum + e.amount_cents, 0),
+        categoryId,
+        name: category?.name || 'Sin categoría',
+        icon: category?.icon || '📦',
+        budgetCents,
+        spentCents,
+        percentage: budgetCents > 0 ? (spentCents / budgetCents) * 100 : 0,
       }
     })
-  }, [expenses])
+    .sort((a, b) => b.percentage - a.percentage)
 
-  const last6MonthsChartData = useMemo(
-    () => last6Months.map((m) => ({ name: m.name, income: m.incomeCents / 100, expenses: m.expensesCents / 100 })),
-    [last6Months]
-  )
+  // ---- Categorías ----
+  const categoryRows =
+    categoryPeriod === 'month'
+      ? categorySpendWithChange(expenses, categories, monthStart, value, today)
+      : aggregateByCategory(
+          expenses,
+          categories,
+          categoryPeriod === '3months'
+            ? (e) =>
+                e.transaction_type === 'expense' &&
+                getTrailingMonths(3, monthStart).some((m) => isInMonth(parseExpenseDate(e.date), m.monthStart))
+            : (e) => e.transaction_type === 'expense',
+          value
+        ).map((c) => ({ ...c, total: c.totalCents, changePercent: null }))
+  const categoryTotal = categoryRows.reduce((acc, c) => acc + c.total, 0)
 
-  const currentMonthData = last6Months[last6Months.length - 1]
+  const topExpenses = expenses
+    .filter((e) => e.transaction_type === 'expense' && isInMonth(parseExpenseDate(e.date), monthStart))
+    .sort((a, b) => value(b) - value(a))
+    .slice(0, 5)
 
-  // Total pending installment debt
-  const debtTotals = useMemo(() => {
-    const pending = expenses.filter((e) => isInstallmentPending(e))
-    const totalDebtCents = pending.reduce((sum, e) => sum + e.amount_cents, 0)
-    const thisMonthDebtCents = pending
-      .filter((e) => isInMonth(parseExpenseDate(e.date), monthStart))
-      .reduce((sum, e) => sum + e.amount_cents, 0)
-    return {
-      totalDebtCents,
-      thisMonthDebtCents,
-      nextMonthsDebtCents: totalDebtCents - thisMonthDebtCents,
-    }
-  }, [expenses, monthStart])
+  // ---- Cuotas (always from today, whatever month is selected) ----
+  const pendingInstallments = expenses.filter((e) => isInstallmentPending(e, today))
+  const totalDebt = sumValues(pendingInstallments)
+  const upcomingDebt = getUpcomingMonths(3, today).map((bucket) => ({
+    ...bucket,
+    amount: sumValues(pendingInstallments.filter((e) => isInMonth(parseExpenseDate(e.date), bucket.monthStart))),
+  }))
+  const activePlans = getActiveInstallmentGroups(expenses, today)
+  const visiblePlans = showAllPlans ? activePlans : activePlans.slice(0, PLANS_PREVIEW)
 
-  // Upcoming 3-month debt breakdown
-  const threeMonthDebt = useMemo(() => {
-    const pending = expenses.filter((e) => isInstallmentPending(e))
-    const buckets = upcomingMonths.map((bucket) => ({
-      key: bucket.key,
-      label: bucket.label,
-      amountCents: pending
-        .filter((e) => isInMonth(parseExpenseDate(e.date), bucket.monthStart))
-        .reduce((sum, e) => sum + e.amount_cents, 0),
-    }))
-    return { buckets, totalCents: buckets.reduce((sum, b) => sum + b.amountCents, 0) }
-  }, [expenses, upcomingMonths])
+  // ---- Tendencia ----
+  const trend = getTrailingMonths(6, monthStart).map((bucket) => {
+    const inBucket = (type: Expense['transaction_type']) =>
+      expenses.filter((e) => e.transaction_type === type && isInMonth(parseExpenseDate(e.date), bucket.monthStart))
+    return { name: bucket.label, income: sumValues(inBucket('income')) / 100, expenses: sumValues(inBucket('expense')) / 100 }
+  })
 
-  // Savings rate for the current month
-  const savingsRate = useMemo(() => {
-    const totalIncomeCents = currentMonthData?.incomeCents || 0
-    const totalSavingsCents = expenses
-      .filter((e) => e.transaction_type === 'savings' && isInMonth(parseExpenseDate(e.date), monthStart))
-      .reduce((sum, e) => sum + Math.abs(e.amount_cents), 0)
-    return {
-      rate: totalIncomeCents > 0 ? (totalSavingsCents / totalIncomeCents) * 100 : 0,
-    }
-  }, [expenses, monthStart, currentMonthData])
-
-  // Category breakdown, scoped by the selected period (fixes the missing date-scope bug)
-  const categoryBreakdown = useMemo(() => {
-    let predicate: (e: (typeof expenses)[number]) => boolean
-
-    if (categoryPeriod === 'month') {
-      predicate = (e) => e.transaction_type === 'expense' && isInMonth(parseExpenseDate(e.date), monthStart)
-    } else if (categoryPeriod === '3months') {
-      const months = getTrailingMonths(3)
-      predicate = (e) =>
-        e.transaction_type === 'expense' &&
-        months.some((m) => isInMonth(parseExpenseDate(e.date), m.monthStart))
-    } else {
-      predicate = (e) => e.transaction_type === 'expense'
-    }
-
-    return aggregateByCategory(expenses, categories, predicate)
-      .slice(0, 5)
-      .map((c) => ({ name: c.name, value: c.totalCents / 100, color: c.color }))
-  }, [expenses, categories, categoryPeriod, monthStart])
-
-  // Daily spending for the last 30 days
-  const last30Days = useMemo(() => {
-    const days = []
-    const today = new Date()
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(today)
-      d.setDate(d.getDate() - i)
-      const dateStr = toDateKey(d)
-
-      const dayExpenses = expenses
-        .filter((e) => e.date === dateStr && e.transaction_type === 'expense')
-        .reduce((sum, e) => sum + e.amount_cents, 0)
-
-      days.push({ day: d.getDate(), amount: dayExpenses / 100 })
-    }
-    return days
-  }, [expenses])
-
-  // Daily average spend this month (spend-so-far / days-elapsed-so-far)
-  const dailyAverage = useMemo(() => {
-    const currentDay = new Date().getDate()
-    const currentMonthExpenseCents = expenses
-      .filter((e) => e.transaction_type === 'expense' && isInMonth(parseExpenseDate(e.date), monthStart))
-      .reduce((sum, e) => sum + e.amount_cents, 0)
-    return currentDay > 0 ? currentMonthExpenseCents / currentDay : 0
-  }, [expenses, monthStart])
-
-  const activeInstallmentGroups = useMemo(() => getActiveInstallmentGroups(expenses), [expenses])
-
-  const estadoFinanciero = useMemo(() => {
-    const totalIncomeCents = currentMonthData?.incomeCents || 0
-    const totalExpensesCents = currentMonthData?.expensesCents || 0
-    const ratio = totalIncomeCents > 0 ? totalExpensesCents / totalIncomeCents : 0
-
-    let status: 'good' | 'warning' | 'danger' = 'good'
-    let message = 'Todo bien: Gastos bajo control'
-    let icon = '🟢'
-    if (ratio > 0.9) {
-      status = 'danger'
-      message = 'Alerta: Gastos superan el 90% de tus ingresos'
-      icon = '🔴'
-    } else if (ratio > 0.8) {
-      status = 'warning'
-      message = 'Atención: Gastos elevados'
-      icon = '🟡'
-    }
-
-    return { ratio, status, message, icon }
-  }, [currentMonthData])
-
-  const monthOverMonthChange = useMemo(() => {
-    if (last6Months.length < 2) return null
-    const current = last6Months[last6Months.length - 1]
-    const previous = last6Months[last6Months.length - 2]
-    if (previous.expensesCents <= 0) return 0
-    return ((current.expensesCents - previous.expensesCents) / previous.expensesCents) * 100
-  }, [last6Months])
-
-  // Purchasing power impact: 3-month average expense ~6 months ago vs. today, adjusted for inflation
-  const purchasingPower = useMemo(() => {
+  // Purchasing power: average monthly spend ~6 months ago, adjusted by inflation since then (pesos)
+  const purchasingPower = (() => {
     if (!inflationData || inflationData.cumulativeSixMonths <= 0) return null
-
-    const sixMonthsAgo = subMonths(new Date(), 6)
-    const referenceMonths = getTrailingMonths(3, sixMonthsAgo)
-    const monthlyTotals = referenceMonths.map((bucket) =>
+    const referenceMonths = getTrailingMonths(3, subMonths(startOfMonth(today), 6))
+    const totals = referenceMonths.map((bucket) =>
       expenses
         .filter((e) => e.transaction_type === 'expense' && isInMonth(parseExpenseDate(e.date), bucket.monthStart))
-        .reduce((sum, e) => sum + e.amount_cents, 0)
+        .reduce((acc, e) => acc + e.amount_cents, 0)
     )
-    const monthsWithData = monthlyTotals.filter((t) => t > 0).length
-    const referenceLabel = `${referenceMonths[0].label}-${referenceMonths[2].label}`
-
-    if (monthsWithData === 0) {
-      return { hasData: false as const, referenceLabel }
-    }
-
-    const avgOldCents = monthlyTotals.reduce((a, b) => a + b, 0) / monthsWithData
-    const adjustedCents = avgOldCents * (1 + inflationData.cumulativeSixMonths / 100)
-
+    const monthsWithData = totals.filter((t) => t > 0).length
+    if (monthsWithData === 0) return null
+    const avgOldCents = Math.round(totals.reduce((a, b) => a + b, 0) / monthsWithData / 100) * 100
     return {
-      hasData: true as const,
-      referenceLabel,
+      label: `${referenceMonths[0].label}–${referenceMonths[2].label}`,
       avgOldCents,
-      adjustedCents,
-      cumulativeInflation: inflationData.cumulativeSixMonths,
+      // Rounded to whole pesos: centavos are noise in an estimate like this
+      adjustedCents: Math.round((avgOldCents * (1 + inflationData.cumulativeSixMonths / 100)) / 100) * 100,
     }
-  }, [expenses, inflationData])
-
-  const top5Expenses = useMemo(() => {
-    return expenses
-      .filter((e) => e.transaction_type === 'expense' && isInMonth(parseExpenseDate(e.date), monthStart))
-      .sort((a, b) => b.amount_cents - a.amount_cents)
-      .slice(0, 5)
-  }, [expenses, monthStart])
-
-  const budgetProgress = useMemo(() => {
-    const spendMap = getCurrentMonthExpenseByCategory(expenses, categories)
-    return Object.entries(budgets)
-      .map(([categoryId, budgetCents]) => {
-        const category = categories.find((c) => c.id === categoryId)
-        const spentCents = spendMap.get(categoryId) || 0
-        const percentage = budgetCents > 0 ? (spentCents / budgetCents) * 100 : 0
-        return {
-          categoryId,
-          name: category?.name || 'Sin categoría',
-          icon: category?.icon || '📦',
-          budgetCents,
-          spentCents,
-          percentage,
-        }
-      })
-      .sort((a, b) => b.percentage - a.percentage)
-  }, [budgets, expenses, categories])
+  })()
 
   const handleDeleteGroup = async () => {
     if (!groupToDelete) return
@@ -287,489 +255,330 @@ export function SummaryView() {
     }
   }
 
-  if (isLoading || isLoadingInflation) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-primary">Cargando resumen...</div>
-      </div>
-    )
-  }
-
   const tooltipStyle = {
     borderRadius: '8px',
     border: `1px solid ${chartColors.border}`,
     background: chartColors.card,
     color: chartColors.foreground,
   }
+  const chartTooltipFormatter = (v: unknown) => formatCurrency((v as number) * 100, currency, true)
 
   return (
-    <div className="space-y-6 pb-20">
-      {/* Total Debt Card (Cuotas) */}
-      <div className="glass-card rounded-2xl p-5 sm:p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-destructive" />
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">Deuda Total Pendiente (Cuotas)</h2>
+    <div className="space-y-4 sm:space-y-6 pb-20">
+      {/* Month selector (shared with the Gastos tab) */}
+      <div className="flex items-center justify-between gap-2">
+        <Button variant="outline" size="sm" onClick={() => shiftMonth(-1)} aria-label="Mes anterior" className="border-border">
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <div className="text-center">
+          <p className="font-semibold text-foreground capitalize">{format(monthStart, 'MMMM yyyy', { locale: es })}</p>
+          {!isCurrentMonth && (
+            <button onClick={goToCurrentMonth} className="text-xs text-primary hover:underline">
+              Volver al mes actual
+            </button>
+          )}
         </div>
-        <div className="text-2xl sm:text-3xl font-bold mb-3 text-destructive font-amount">
-          {fmt(debtTotals.totalDebtCents)}
-        </div>
-        <div className="flex flex-wrap gap-3 text-sm">
-          <div className="bg-muted/40 rounded-lg px-3 py-2">
-            <span className="text-muted-foreground">Este mes: </span>
-            <span className="font-semibold text-foreground font-amount">{fmt(debtTotals.thisMonthDebtCents)}</span>
-          </div>
-          <div className="bg-muted/40 rounded-lg px-3 py-2">
-            <span className="text-muted-foreground">Próximos meses: </span>
-            <span className="font-semibold text-foreground font-amount">{fmt(debtTotals.nextMonthsDebtCents)}</span>
-          </div>
-        </div>
+        <Button variant="outline" size="sm" onClick={() => shiftMonth(1)} aria-label="Mes siguiente" className="border-border">
+          <ChevronRight className="w-4 h-4" />
+        </Button>
       </div>
 
-      {/* Inflation Card */}
-      {inflationData?.latest && (
-        <div className="glass-card rounded-2xl p-4 sm:p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="bg-warning/15 p-2 rounded-lg">
-              <span className="text-xl">📈</span>
+      {/* 1. El mes */}
+      <Card>
+        <CardTitle
+          icon={<Wallet className="w-5 h-5 text-primary" />}
+          title="Gastos del mes"
+          aside={<ChangeChip percent={spendChange} />}
+        />
+        <p className="text-3xl font-bold text-foreground font-amount">{fmt(summary.spent)}</p>
+        {/* The ▲▼ chip compares like with like: for the month in progress that's
+            spending so far vs the previous month up to the same day */}
+        <p className="text-sm text-muted-foreground mt-1">
+          {summary.isFutureMonth
+            ? 'Mes futuro: solo cuotas y gastos ya cargados'
+            : isCurrentMonth
+              ? <>Hasta hoy {fmt(summary.spentToDate)} · en {monthName(previousMonthStart)} a esta altura {fmt(summary.previousSpent)}</>
+              : <>En {monthName(previousMonthStart)}: {fmt(summary.previousSpent)}</>}
+        </p>
+
+        <StatList>
+          <Stat label="Ingresos" value={fmt(summary.income)} />
+          {summary.dailyAverage !== null && <Stat label="Promedio por día" value={fmt(summary.dailyAverage)} />}
+          {summary.projected !== null && <Stat label="Proyección a fin de mes" value={fmt(summary.projected)} />}
+        </StatList>
+
+        {incomeRatio !== null && (
+          <div className="mt-4">
+            <div className="flex justify-between text-sm mb-1.5">
+              <span className="text-muted-foreground">Gastos sobre ingresos</span>
+              <span className="font-semibold text-foreground">{incomeRatio.toFixed(0)}%</span>
             </div>
-            <h2 className="text-base sm:text-lg font-semibold text-foreground">Inflación Oficial</h2>
+            <ProgressBar percent={incomeRatio} tone={incomeRatio > 90 ? 'destructive' : incomeRatio > 80 ? 'warning' : 'success'} />
           </div>
+        )}
+      </Card>
 
-          <div className="grid grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <div className="text-2xl sm:text-3xl font-bold text-warning font-amount">
-                {inflationData.latest.valor.toFixed(1)}%
-              </div>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                {new Date(inflationData.latest.fecha).toLocaleDateString('es-AR', {
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </p>
+      {/* 2. Ahorro */}
+      <Card>
+        <CardTitle icon={<PiggyBank className="w-5 h-5 text-primary" />} title="Ahorro" />
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <p className="text-2xl font-bold text-primary font-amount">{fmt(summary.savings)}</p>
+          {savingsRate !== null && (
+            <p className={`text-sm font-semibold ${savingsRate >= 20 ? 'text-success' : savingsRate >= 10 ? 'text-warning' : 'text-muted-foreground'}`}>
+              {savingsRate.toFixed(0)}% de tus ingresos
+            </p>
+          )}
+        </div>
+
+        {goalPercent !== null ? (
+          <div className="mt-4">
+            <div className="flex justify-between text-sm mb-1.5 gap-2">
+              <span className="text-muted-foreground">Meta mensual</span>
+              <span className="font-semibold text-foreground font-amount whitespace-nowrap">
+                {formatCurrency(savingsUsdCents, 'USD', true)} de {formatCurrency(monthlySavingsGoalUSD * 100, 'USD', true)}
+              </span>
             </div>
-            <div>
-              <div className="text-2xl sm:text-3xl font-bold text-warning font-amount">
-                {inflationData.cumulativeSixMonths.toFixed(1)}%
-              </div>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1">Acumulado 6 meses</p>
-            </div>
+            <ProgressBar percent={goalPercent} tone={goalPercent >= 100 ? 'success' : 'primary'} />
+            {goalPercent >= 100 && <p className="text-xs text-success mt-1.5">¡Meta cumplida! 🎉</p>}
           </div>
+        ) : (
+          <button onClick={() => setIsSettingsOpen(true)} className="mt-3 text-sm text-primary hover:underline">
+            Definir una meta de ahorro mensual
+          </button>
+        )}
+      </Card>
 
-          <p className="text-xs text-muted-foreground/70 mt-3">Fuente: INDEC vía ArgentinaDatos</p>
-        </div>
-      )}
-
-      {/* Savings Rate and 3-Month Debt Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="glass-card rounded-2xl p-5 sm:p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <PiggyBank
-              className={`w-5 h-5 sm:w-6 sm:h-6 ${
-                savingsRate.rate >= 20 ? 'text-success' : savingsRate.rate >= 10 ? 'text-warning' : 'text-destructive'
-              }`}
-            />
-            <h2 className="text-base sm:text-lg font-semibold text-foreground">Tasa de Ahorro</h2>
-          </div>
-          <div
-            className={`text-2xl sm:text-3xl font-bold mb-2 font-amount ${
-              savingsRate.rate >= 20 ? 'text-success' : savingsRate.rate >= 10 ? 'text-warning' : 'text-destructive'
-            }`}
-          >
-            {savingsRate.rate.toFixed(1)}%
-          </div>
-          <div className="bg-muted/40 rounded-lg px-3 py-2 text-sm text-muted-foreground">
-            {savingsRate.rate >= 20
-              ? '¡Excelente! Estás ahorrando muy bien'
-              : savingsRate.rate >= 10
-                ? 'Bien, pero podrías ahorrar más'
-                : 'Alerta: Ahorro muy bajo'}
-          </div>
-        </div>
-
-        <div className="glass-card rounded-2xl p-5 sm:p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <CalendarDays className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
-            <h2 className="text-base sm:text-lg font-semibold text-foreground">Deuda Próximos 3 Meses</h2>
-          </div>
-          <div className="text-2xl sm:text-3xl font-bold mb-3 text-primary font-amount">
-            {fmt(threeMonthDebt.totalCents)}
-          </div>
-          <div className="flex flex-col gap-2 text-sm">
-            {threeMonthDebt.buckets.map((b) => (
-              <div key={b.key} className="bg-muted/40 rounded-lg px-3 py-1.5 flex justify-between">
-                <span className="text-muted-foreground capitalize">{b.label}:</span>
-                <span className="font-semibold text-foreground font-amount">{fmt(b.amountCents)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Budget vs Actual */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-4 gap-2">
-          <div className="flex items-center gap-2">
-            <Target className="w-5 h-5 text-primary" />
-            <h3 className="text-base sm:text-lg font-semibold text-foreground">Presupuestos del Mes</h3>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsBudgetManagerOpen(true)}
-            className="text-primary border-primary/30 hover:bg-primary/10"
-          >
-            Configurar
-          </Button>
-        </div>
-
+      {/* 3. Presupuestos */}
+      <Card>
+        <CardTitle
+          icon={<Target className="w-5 h-5 text-primary" />}
+          title="Presupuestos"
+          aside={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsBudgetManagerOpen(true)}
+              className="text-primary border-primary/30 hover:bg-primary/10"
+            >
+              Configurar
+            </Button>
+          }
+        />
         {budgetProgress.length === 0 ? (
-          <p className="text-muted-foreground text-sm text-center py-4">
+          <p className="text-muted-foreground text-sm text-center py-2">
             No configuraste presupuestos todavía. Tocá "Configurar" para agregar uno por categoría.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-3">
+          <div className="space-y-3">
             {budgetProgress.map((b) => (
-              <div key={b.categoryId} className="bg-muted/30 rounded-xl p-3">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-lg shrink-0">{b.icon}</span>
+              <div key={b.categoryId}>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="shrink-0">{b.icon}</span>
                     <span className="font-medium text-foreground truncate">{b.name}</span>
-                  </div>
-                  <span className="text-sm font-medium text-muted-foreground font-amount">
-                    {b.percentage.toFixed(0)}%
+                  </span>
+                  <span className="text-sm text-muted-foreground font-amount whitespace-nowrap">
+                    {fmtArs(b.spentCents)} de {fmtArs(b.budgetCents)}
                   </span>
                 </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      b.percentage > 100 ? 'bg-destructive' : b.percentage > 80 ? 'bg-warning' : 'bg-success'
-                    }`}
-                    style={{ width: `${Math.min(b.percentage, 100)}%` }}
-                  />
-                </div>
-                <p className="mt-1.5 text-xs text-muted-foreground font-amount">
-                  {fmt(b.spentCents)} de {fmt(b.budgetCents)}
-                </p>
+                <ProgressBar percent={b.percentage} tone={b.percentage > 100 ? 'destructive' : b.percentage > 80 ? 'warning' : 'success'} />
               </div>
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
-      {/* Monthly Comparison Chart */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6">
-        <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Ingresos vs Gastos (Últimos 6 meses)</h3>
+      {/* 4. Categorías */}
+      <Card>
+        <CardTitle
+          icon={<Tags className="w-5 h-5 text-primary" />}
+          title="Categorías"
+          aside={
+            <div className="flex bg-muted rounded-lg p-1 shrink-0">
+              {(Object.keys(PERIOD_LABELS) as CategoryPeriod[]).map((period) => (
+                <button
+                  key={period}
+                  onClick={() => setCategoryPeriod(period)}
+                  className={`text-xs px-2.5 py-1 rounded-md font-medium transition-all ${
+                    categoryPeriod === period ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {PERIOD_LABELS[period]}
+                </button>
+              ))}
+            </div>
+          }
+        />
+
+        {categoryRows.length === 0 ? (
+          <p className="text-center text-muted-foreground py-4 text-sm">No hay gastos en este período</p>
+        ) : (
+          <>
+            <div className="h-44">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={categoryRows} dataKey="total" nameKey="name" innerRadius={42} outerRadius={70} paddingAngle={2} stroke="none">
+                    {categoryRows.map((c) => (
+                      <Cell key={c.categoryId} fill={c.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v) => fmt(v as number)} contentStyle={tooltipStyle} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <ul className="mt-3 divide-y divide-border">
+              {categoryRows.map((c) => (
+                <li key={c.categoryId} className="flex items-center gap-3 py-2">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-foreground">
+                      {c.icon} {c.name}
+                    </p>
+                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {categoryTotal > 0 ? ((c.total / categoryTotal) * 100).toFixed(0) : 0}% del total
+                      {categoryPeriod === 'month' && <ChangeChip percent={c.changePercent} />}
+                    </p>
+                  </div>
+                  <span className="font-semibold text-foreground font-amount whitespace-nowrap">{fmt(c.total)}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {categoryPeriod === 'month' && topExpenses.length > 0 && (
+          <div className="mt-5">
+            <h4 className="text-sm font-medium text-muted-foreground mb-2">Mayores gastos del mes</h4>
+            <ol className="space-y-2">
+              {topExpenses.map((expense, index) => {
+                const category = categories.find((c) => c.id === expense.category_id)
+                return (
+                  <li key={expense.id} className="flex items-center gap-3 p-2.5 bg-muted/30 rounded-xl">
+                    <span className="w-6 h-6 shrink-0 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">
+                      {index + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground truncate">{stripInstallmentSuffix(expense.description)}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {category?.name}
+                        {expense.is_installment && ` • Cuota ${expense.installment_number}/${expense.total_installments}`}
+                      </p>
+                    </div>
+                    <span className="font-semibold text-foreground whitespace-nowrap font-amount">{fmt(value(expense))}</span>
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
+        )}
+      </Card>
+
+      {/* 5. Cuotas */}
+      <Card>
+        <CardTitle
+          icon={<CreditCard className="w-5 h-5 text-primary" />}
+          title="Cuotas"
+          aside={activePlans.length > 0 && <span className="text-sm text-muted-foreground shrink-0">{activePlans.length} activas</span>}
+        />
+        {activePlans.length === 0 ? (
+          <p className="text-muted-foreground text-sm">No tenés cuotas pendientes.</p>
+        ) : (
+          <>
+            <p className="text-2xl font-bold text-foreground font-amount">{fmt(totalDebt)}</p>
+            <p className="text-sm text-muted-foreground">pendiente en total, desde hoy</p>
+
+            <StatList>
+              {upcomingDebt.map((m) => (
+                <Stat key={m.key} label={capitalize(monthName(m.monthStart))} value={fmt(m.amount)} />
+              ))}
+            </StatList>
+
+            <div className="space-y-3 mt-4">
+              {visiblePlans.map((group) => {
+                const category = categories.find((c) => c.id === group.categoryId)
+                return (
+                  <div key={group.groupId} className="p-3 bg-muted/30 rounded-xl">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xl shrink-0">{category?.icon || '📦'}</span>
+                        <div className="min-w-0">
+                          <p className="font-medium text-foreground truncate">{group.description}</p>
+                          <p className="text-sm text-primary font-semibold">
+                            Cuota {group.currentNumber} / {group.totalInstallments}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setGroupToDelete(group.groupId)
+                          setDeleteModalOpen(true)
+                        }}
+                        className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors shrink-0"
+                        title="Eliminar todas las cuotas"
+                        aria-label="Eliminar todas las cuotas"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <ProgressBar percent={(group.paidCount / group.totalInstallments) * 100} tone="primary" />
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm mt-2">
+                      <span className="text-muted-foreground whitespace-nowrap">
+                        {group.paidCount} de {group.totalInstallments} pagadas
+                      </span>
+                      <span className="text-muted-foreground whitespace-nowrap">
+                        Resta <span className="font-semibold text-foreground font-amount">{fmt(sumValues(pendingInstallments.filter((e) => e.installment_group_id === group.groupId)))}</span>
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {activePlans.length > PLANS_PREVIEW && (
+              <button onClick={() => setShowAllPlans(!showAllPlans)} className="mt-3 w-full text-sm text-primary hover:underline">
+                {showAllPlans ? 'Ver menos' : `Ver todas (${activePlans.length})`}
+              </button>
+            )}
+          </>
+        )}
+      </Card>
+
+      {/* 6. Tendencia */}
+      <Card>
+        <CardTitle icon={<TrendingUp className="w-5 h-5 text-primary" />} title="Tendencia (6 meses)" />
         <div className="h-48 sm:h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={last6MonthsChartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+            <BarChart data={trend} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors.border} />
               <XAxis dataKey="name" stroke={chartColors.mutedForeground} fontSize={10} tickMargin={5} />
               <YAxis stroke={chartColors.mutedForeground} fontSize={10} width={44} tickFormatter={formatAxisTick} />
-              <Tooltip
-                formatter={(value) => formatCurrency((value as number) * 100, 'ARS')}
-                contentStyle={tooltipStyle}
-              />
+              <Tooltip formatter={chartTooltipFormatter} contentStyle={tooltipStyle} />
               <Legend wrapperStyle={{ fontSize: '12px', color: chartColors.mutedForeground }} />
               <Bar dataKey="income" name="Ingresos" fill={chartColors.success} radius={[4, 4, 0, 0]} />
               <Bar dataKey="expenses" name="Gastos" fill={chartColors.destructive} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
 
-      {/* Top Categories & Financial Insights */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Top Categories Pie Chart */}
-        <div className="glass-card rounded-2xl p-4 sm:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <h3 className="text-base sm:text-lg font-semibold text-foreground">
-              Gastos por Categoría · {CATEGORY_PERIOD_LABELS[categoryPeriod]}
-            </h3>
-            <div className="flex bg-muted rounded-lg p-1">
-              {(Object.keys(CATEGORY_PERIOD_LABELS) as CategoryPeriod[]).map((period) => (
-                <button
-                  key={period}
-                  onClick={() => setCategoryPeriod(period)}
-                  className={`text-xs sm:text-sm px-2.5 py-1 rounded-md font-medium transition-all ${
-                    categoryPeriod === period
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {period === 'month' ? 'Mes' : period === '3months' ? '3 meses' : 'Todo'}
-                </button>
-              ))}
-            </div>
-          </div>
-          {categoryBreakdown.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8 text-sm">No hay gastos registrados en este período</p>
-          ) : (
-            <>
-              <div className="h-56 sm:h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryBreakdown}
-                      cx="50%"
-                      cy="45%"
-                      labelLine={false}
-                      label={({ percent }) => `${((percent || 0) * 100).toFixed(0)}%`}
-                      outerRadius={60}
-                      dataKey="value"
-                    >
-                      {categoryBreakdown.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatCurrency((value as number) * 100, 'ARS')} contentStyle={tooltipStyle} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              {/* Category legend for mobile */}
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:hidden">
-                {categoryBreakdown.map((cat, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-xs">
-                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cat.color }}></span>
-                    <span className="text-muted-foreground truncate">{cat.name}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Financial Insights */}
-        <div className="glass-card rounded-2xl p-4 sm:p-6">
-          <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Estado Financiero</h3>
-
-          {/* Status Indicator */}
-          <div className="mb-6">
-            <div
-              className={`p-4 rounded-xl border ${
-                estadoFinanciero.status === 'good'
-                  ? 'bg-success/10 border-success/30'
-                  : estadoFinanciero.status === 'warning'
-                    ? 'bg-warning/10 border-warning/30'
-                    : 'bg-destructive/10 border-destructive/30'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{estadoFinanciero.icon}</span>
-                <div>
-                  <p
-                    className={`font-semibold ${
-                      estadoFinanciero.status === 'good'
-                        ? 'text-success'
-                        : estadoFinanciero.status === 'warning'
-                          ? 'text-warning'
-                          : 'text-destructive'
-                    }`}
-                  >
-                    {estadoFinanciero.message}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Estás usando el {(estadoFinanciero.ratio * 100).toFixed(0)}% de tus ingresos
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Month-over-Month Comparison */}
-          {monthOverMonthChange !== null && (
-            <div className="space-y-3">
-              <h4 className="font-medium text-foreground">Comparación vs Mes Anterior</h4>
-              <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
-                <span className="text-muted-foreground">Variación de gastos</span>
-                <span className={`font-semibold ${monthOverMonthChange > 0 ? 'text-destructive' : 'text-success'}`}>
-                  {monthOverMonthChange > 0 ? '↑' : '↓'} {Math.abs(monthOverMonthChange).toFixed(1)}%
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Daily Average */}
-          <div className="mt-4 pt-4 border-t border-border">
-            <div className="flex items-center justify-between p-4 bg-primary/10 rounded-xl">
-              <div className="flex items-center gap-3">
-                <TrendingUp className="w-5 h-5 text-primary" />
-                <span className="text-foreground">Gasto promedio diario</span>
-              </div>
-              <span className="font-bold text-primary font-amount">{fmt(dailyAverage)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Purchasing Power Impact */}
-      {purchasingPower && (
-        <div className="glass-card rounded-2xl p-4 sm:p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="bg-warning/15 p-2 rounded-lg">
-              <span className="text-xl">💸</span>
-            </div>
-            <h3 className="text-base sm:text-lg font-semibold text-foreground">Impacto en tu Poder Adquisitivo</h3>
-          </div>
-
-          {!purchasingPower.hasData ? (
-            <p className="text-muted-foreground text-center py-4 text-sm">
-              No hay gastos registrados de hace 6 meses para comparar
-            </p>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground mb-4">
-                Promedio de {purchasingPower.referenceLabel} (3 meses, para suavizar gastos puntuales)
+        {(inflationData?.latest || purchasingPower) && (
+          <div className="mt-4 pt-4 border-t border-border space-y-1.5 text-sm text-muted-foreground">
+            {inflationData?.latest && (
+              <p>
+                Inflación (INDEC): <span className="font-semibold text-warning">{inflationData.latest.valor.toFixed(1)}%</span> en{' '}
+                {format(parseExpenseDate(inflationData.latest.fecha.slice(0, 10)), 'MMM yyyy', { locale: es })} ·{' '}
+                <span className="font-semibold text-warning">{inflationData.cumulativeSixMonths.toFixed(1)}%</span> en 6 meses
               </p>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center p-4 bg-muted/30 rounded-xl">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Gasto mensual promedio de entonces</p>
-                    <p className="text-xs text-muted-foreground/70">Sin ajustar</p>
-                  </div>
-                  <span className="text-xl font-bold text-foreground font-amount">{fmt(purchasingPower.avgOldCents)}</span>
-                </div>
-
-                <div className="flex justify-between items-center p-4 bg-warning/10 rounded-xl border border-warning/20">
-                  <div>
-                    <p className="text-sm text-foreground">Equivalente hoy</p>
-                    <p className="text-xs text-muted-foreground">
-                      Ajustado por inflación ({purchasingPower.cumulativeInflation.toFixed(1)}%)
-                    </p>
-                  </div>
-                  <span className="text-xl font-bold text-warning font-amount">{fmt(purchasingPower.adjustedCents)}</span>
-                </div>
-
-                <div className="text-center p-3 bg-destructive/10 rounded-lg">
-                  <p className="text-sm text-destructive">
-                    <span className="font-bold">Pérdida de poder adquisitivo:</span> ese mismo gasto equivale a{' '}
-                    {((purchasingPower.adjustedCents / purchasingPower.avgOldCents - 1) * 100).toFixed(1)}% más hoy
-                  </p>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Daily Spending Trend */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6">
-        <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Tendencia de Gastos (Últimos 30 días)</h3>
-        <div className="h-40 sm:h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={last30Days} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartColors.border} />
-              <XAxis dataKey="day" stroke={chartColors.mutedForeground} fontSize={9} interval={4} tickMargin={5} />
-              <YAxis stroke={chartColors.mutedForeground} fontSize={10} width={44} tickFormatter={formatAxisTick} />
-              <Tooltip
-                formatter={(value) => formatCurrency((value as number) * 100, 'ARS')}
-                contentStyle={tooltipStyle}
-              />
-              <Line
-                type="monotone"
-                dataKey="amount"
-                stroke={chartColors.primary}
-                strokeWidth={2}
-                dot={{ fill: chartColors.primary, strokeWidth: 0, r: 3 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Top 5 Expenses */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6">
-        <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Top 5 Gastos del Mes</h3>
-        <div className="space-y-3">
-          {top5Expenses.map((expense, index) => {
-            const category = categories.find((c) => c.id === expense.category_id)
-            return (
-              <div key={expense.id} className="flex items-center justify-between gap-3 p-3 bg-muted/30 rounded-xl">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-6 h-6 shrink-0 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground truncate">{expense.description}</p>
-                    <p className="text-xs text-muted-foreground truncate">{category?.name}</p>
-                  </div>
-                </div>
-                <span className="font-semibold text-primary whitespace-nowrap font-amount">
-                  {fmt(expense.amount_cents)}
-                </span>
-              </div>
-            )
-          })}
-
-          {top5Expenses.length === 0 && (
-            <p className="text-center text-muted-foreground py-4 text-sm">No hay gastos registrados este mes</p>
-          )}
-        </div>
-      </div>
-
-      {/* All Active Installments */}
-      {activeInstallmentGroups.length > 0 && (
-        <div className="glass-card rounded-2xl p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-primary" />
-              <h3 className="text-base sm:text-lg font-semibold text-foreground">Cuotas en Progreso</h3>
-            </div>
-            <span className="text-sm text-muted-foreground">{activeInstallmentGroups.length} activas</span>
+            )}
+            {purchasingPower && (
+              <p>
+                Lo que gastabas por mes en {purchasingPower.label} ({fmtArs(purchasingPower.avgOldCents)}) hoy equivale a{' '}
+                <span className="font-semibold text-foreground font-amount">{fmtArs(purchasingPower.adjustedCents)}</span>.
+              </p>
+            )}
           </div>
-
-          <div className="space-y-4">
-            {activeInstallmentGroups.map((group) => {
-              const category = categories.find((c) => c.id === group.categoryId)
-              const progressPercent = (group.paidCount / group.totalInstallments) * 100
-
-              return (
-                <div key={group.groupId} className="p-4 bg-muted/30 rounded-xl">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-2xl shrink-0">{category?.icon || '📦'}</span>
-                      <div className="min-w-0">
-                        <p className="font-medium text-foreground truncate">{group.description}</p>
-                        <p className="text-sm text-primary font-semibold">
-                          Cuota {group.currentNumber} / {group.totalInstallments}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setGroupToDelete(group.groupId)
-                        setDeleteModalOpen(true)
-                      }}
-                      className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors shrink-0"
-                      title="Eliminar todas las cuotas"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Progress bar */}
-                  <div className="mb-2">
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary rounded-full transition-all"
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between text-sm gap-2">
-                    <span className="text-muted-foreground">
-                      {group.paidCount} pagadas • {group.remainingCount} restantes
-                    </span>
-                    <span className="font-semibold text-foreground whitespace-nowrap font-amount">
-                      {fmt(group.remainingAmountCents)} restantes
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+        )}
+      </Card>
 
       {/* Delete Confirmation Modal */}
       {deleteModalOpen && (

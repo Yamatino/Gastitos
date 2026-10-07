@@ -3,13 +3,54 @@ import { useUserStore } from '../stores/userStore'
 import { useDataStore } from '../stores/dataStore'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { X, Settings, DollarSign, Target, CreditCard, Plus, Trash2, Sun, Moon, Zap, ZapOff } from 'lucide-react'
+import { X, Settings, DollarSign, Target, CreditCard, Plus, Trash2, Sun, Moon, Zap, ZapOff, Smartphone, Share } from 'lucide-react'
+import { promptInstall, useInstallState } from '../lib/installPrompt'
 import { sanitizeCategoryName } from '../lib/validation'
 import { useToastStore } from '../stores/toastStore'
 
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
+}
+
+/** "Instalar app": the browser's prompt where available, otherwise how to do it by hand. */
+function InstallAppSection() {
+  const { installed, canPrompt, isIOS } = useInstallState()
+  if (installed) return null
+
+  const handleInstall = async () => {
+    const accepted = await promptInstall()
+    if (accepted) useToastStore.getState().addToast('¡Listo! Gastitos quedó instalada', 'success')
+  }
+
+  return (
+    <div className="p-4 bg-secondary rounded-xl">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="p-2 rounded-lg bg-primary/15 text-primary">
+          <Smartphone className="w-5 h-5" />
+        </div>
+        <div>
+          <p className="font-medium text-foreground">Instalar app</p>
+          <p className="text-sm text-muted-foreground">Abrila desde tu pantalla de inicio, a pantalla completa</p>
+        </div>
+      </div>
+      {canPrompt ? (
+        <Button onClick={handleInstall} className="w-full bg-primary hover:opacity-90">
+          Instalar Gastitos
+        </Button>
+      ) : isIOS ? (
+        <p className="text-sm text-muted-foreground">
+          En Safari, tocá <Share className="inline w-4 h-4 -mt-0.5 text-foreground" aria-label="Compartir" /> <span className="text-foreground font-medium">Compartir</span> y
+          después <span className="text-foreground font-medium">Agregar a inicio</span>.
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Abrí el menú del navegador (⋮) y elegí <span className="text-foreground font-medium">Instalar app</span> o{' '}
+          <span className="text-foreground font-medium">Agregar a la pantalla de inicio</span>.
+        </p>
+      )}
+    </div>
+  )
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
@@ -146,6 +187,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         <div className="p-4 overflow-y-auto max-h-[60vh]">
           {activeTab === 'general' && (
             <div className="space-y-6">
+              <InstallAppSection />
+
               {/* Theme Toggle */}
               <div className="flex items-center justify-between p-4 bg-secondary rounded-xl">
                 <div className="flex items-center gap-3">

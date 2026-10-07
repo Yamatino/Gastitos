@@ -11,6 +11,7 @@ vi.mock('../lib/api', () => ({
   createCategory: vi.fn(),
   deleteCategory: vi.fn(),
   getTransactionCountForCategory: vi.fn(),
+  fetchRecurring: vi.fn().mockResolvedValue([]),
   AppError: class AppError extends Error {
     code: string
     severity: string
@@ -69,6 +70,7 @@ describe('Data Store', () => {
     const api = await import('../lib/api')
     vi.mocked(api.fetchExpenses).mockReset().mockResolvedValue([])
     vi.mocked(api.fetchCategories).mockReset().mockResolvedValue([])
+    vi.mocked(api.fetchRecurring).mockReset().mockResolvedValue([])
   })
 
   describe('Initial State', () => {
@@ -180,6 +182,20 @@ describe('Data Store', () => {
       await load
 
       expect(useDataStore.getState().expenses).toEqual([])
+    })
+  })
+
+  describe('Recurring transactions', () => {
+    it('still loads the rest of the data when recurring transactions fail to load', async () => {
+      const api = await import('../lib/api')
+      vi.mocked(api.fetchExpenses).mockResolvedValue([{ id: 'exp-1' } as Expense])
+      vi.mocked(api.fetchRecurring).mockRejectedValue(new Error('relation "recurring_transactions" does not exist'))
+
+      await useDataStore.getState().loadUserData('user-123')
+
+      expect(useDataStore.getState().expenses).toHaveLength(1)
+      expect(useDataStore.getState().recurring).toEqual([])
+      expect(useDataStore.getState().loadError).toBeNull()
     })
   })
 

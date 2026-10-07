@@ -10,16 +10,20 @@ export type CategorySpend = {
   totalCents: number
 }
 
-/** Sums amount_cents for expenses matching `predicate`, grouped by category, sorted desc. */
+/**
+ * Sums expenses matching `predicate`, grouped by category, sorted desc.
+ * `getValue` picks what to sum (default: amount_cents in ARS).
+ */
 export function aggregateByCategory(
   expenses: Expense[],
   categories: Category[],
-  predicate: (e: Expense) => boolean
+  predicate: (e: Expense) => boolean,
+  getValue: (e: Expense) => number = (e) => e.amount_cents
 ): CategorySpend[] {
   const totals = new Map<string, number>()
   expenses.filter(predicate).forEach((e) => {
     if (!e.category_id) return
-    totals.set(e.category_id, (totals.get(e.category_id) || 0) + e.amount_cents)
+    totals.set(e.category_id, (totals.get(e.category_id) || 0) + getValue(e))
   })
 
   return Array.from(totals.entries())

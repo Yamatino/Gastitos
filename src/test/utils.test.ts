@@ -28,6 +28,12 @@ describe('Utility Functions', () => {
   })
 
   describe('formatCurrency', () => {
+    it('drops ",00" only when asked and the amount has no cents', () => {
+      expect(formatCurrency(85000000, 'ARS', true)).toBe('$\u00A0850.000')
+      expect(formatCurrency(85000050, 'ARS', true)).toBe('$\u00A0850.000,50')
+      expect(formatCurrency(85000000, 'ARS')).toBe('$\u00A0850.000,00')
+    })
+
     it('formats ARS currency correctly', () => {
       // 10000 cents = 100 ARS
       // Note: Intl.NumberFormat adds non-breaking space (\u00A0) between symbol and number

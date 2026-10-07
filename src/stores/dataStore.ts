@@ -10,16 +10,23 @@ import {
   createCategory as apiCreateCategory,
   deleteCategory as apiDeleteCategory,
   getTransactionCountForCategory,
+  fetchRecurring as apiFetchRecurring,
+  createRecurring as apiCreateRecurring,
+  updateRecurring as apiUpdateRecurring,
+  deleteRecurring as apiDeleteRecurring,
+  type RecurringInput,
   AppError,
   ErrorCodes,
   getErrorMessage,
   showErrorAlert
 } from '../lib/api'
+import { buildConfirmedExpense, type PendingRecurring, type RecurringTransaction } from '../lib/recurring'
 
 interface DataState {
   // Data
   expenses: Expense[]
   categories: Category[]
+  recurring: RecurringTransaction[]
   loadedUserId: string | null
   // Set when the initial load fails, so the UI can offer a retry instead of
   // showing an empty account that looks like the data is gone
@@ -58,6 +65,13 @@ interface DataState {
   addCategory: (categoryData: Omit<Category, 'id' | 'user_id' | 'created_at'>) => Promise<void>
   removeCategory: (categoryId: string) => Promise<void>
   
+  // Recurring transactions ("gastos fijos")
+  addRecurring: (userId: string, input: RecurringInput) => Promise<RecurringTransaction>
+  updateRecurring: (id: string, updates: Partial<RecurringInput>) => Promise<void>
+  removeRecurring: (id: string) => Promise<void>
+  confirmRecurring: (pending: PendingRecurring, amountCents: number, rate: number, userId: string) => Promise<void>
+  skipRecurring: (pending: PendingRecurring) => Promise<void>
+  
   // Initialize default categories
   initializeCategories: (userId: string) => Promise<void>
   
@@ -84,6 +98,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
   // Initial state
   expenses: [],
   categories: [],
+  recurring: [],
   loadedUserId: null,
   loadError: null,
   
@@ -129,13 +144,19 @@ export const useDataStore = create<DataState>()((set, get) => ({
     try {
       // Calls the API directly (not the refresh actions above, which swallow
       // errors) so a failed load is actually reported
-      const [expenses, categories] = await Promise.all([
+      const [expenses, categories, recurring] = await Promise.all([
         apiFetchExpenses(userId),
         apiFetchCategories(userId),
+        // Optional feature: if it can't load (e.g. its migration isn't applied
+        // yet), the rest of the app still works without it
+        apiFetchRecurring(userId).catch((error) => {
+          console.error('Error loading recurring transactions:', error)
+          return [] as RecurringTransaction[]
+        }),
       ])
       // Ignore a response that arrives after logout or a user switch
       if (get().loadedUserId !== userId) return
-      set({ expenses: expenses || [], categories: categories || [] })
+      set({ expenses: expenses || [], categories: categories || [], recurring: recurring || [] })
     } catch (error) {
       console.error('Error loading user data:', error)
       if (get().loadedUserId !== userId) return
@@ -254,6 +275,67 @@ export const useDataStore = create<DataState>()((set, get) => ({
     }
   },
   
+  // Recurring transactions
+  addRecurring: async (userId, input) => {
+    try {
+      const created = await apiCreateRecurring(userId, input)
+      set((state) => ({ recurring: [...state.recurring, created] }))
+      return created
+    } catch (error) {
+      console.error('Error adding recurring transaction:', error)
+      showErrorAlert(error, 'Error al guardar el gasto fijo')
+      throw error
+    }
+  },
+
+  updateRecurring: async (id, updates) => {
+    try {
+      const updated = await apiUpdateRecurring(id, updates)
+      set((state) => ({ recurring: state.recurring.map((r) => (r.id === id ? updated : r)) }))
+    } catch (error) {
+      console.error('Error updating recurring transaction:', error)
+      showErrorAlert(error, 'Error al actualizar el gasto fijo')
+      throw error
+    }
+  },
+
+  removeRecurring: async (id) => {
+    try {
+      // Months already confirmed stay as normal transactions (recurring_id is set to null)
+      await apiDeleteRecurring(id)
+      set((state) => ({ recurring: state.recurring.filter((r) => r.id !== id) }))
+    } catch (error) {
+      console.error('Error removing recurring transaction:', error)
+      showErrorAlert(error, 'Error al eliminar el gasto fijo')
+      throw error
+    }
+  },
+
+  confirmRecurring: async (pending, amountCents, rate, userId) => {
+    try {
+      const created = await apiCreateExpense(buildConfirmedExpense(pending, amountCents, rate, userId))
+      set((state) => ({ expenses: [created, ...state.expenses] }))
+    } catch (error) {
+      if (error instanceof AppError && error.code === ErrorCodes.DUPLICATE_ENTRY) {
+        // Already confirmed from another tab or device: just show it
+        await get().fetchExpenses(userId)
+        return
+      }
+      console.error('Error confirming recurring transaction:', error)
+      reportWriteError(error, 'Error al confirmar', () => get().fetchExpenses(userId))
+      throw error
+    }
+    // The latest amount becomes next month's starting point (bills change)
+    if (amountCents !== pending.recurring.amount_cents) {
+      get().updateRecurring(pending.recurring.id, { amount_cents: amountCents }).catch(() => {})
+    }
+  },
+
+  skipRecurring: async (pending) => {
+    const { recurring, period } = pending
+    await get().updateRecurring(recurring.id, { skipped_periods: [...recurring.skipped_periods, period] })
+  },
+
   // Initialize default categories
   initializeCategories: async (userId) => {
     try {
@@ -316,6 +398,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
   resetData: () => set({
     expenses: [],
     categories: [],
+    recurring: [],
     loadedUserId: null,
     loadError: null,
   }),

@@ -30,6 +30,9 @@ export type Expense = {
   // USD payment tracking
   original_currency?: 'ARS' | 'USD'
   original_amount_cents?: number
+  // Set when the row is a confirmed month of a recurring transaction ('YYYY-MM')
+  recurring_id?: string | null
+  recurring_period?: string | null
 }
 
 export type Category = {

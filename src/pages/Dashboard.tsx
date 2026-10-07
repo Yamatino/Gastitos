@@ -4,16 +4,51 @@ import { useDataStore } from '../stores/dataStore'
 import { useUIStore } from '../stores/uiStore'
 import { supabase, type Expense } from '../services/supabase'
 import { formatCurrency, toUsdCents } from '../lib/utils'
-import { toDateKey } from '../lib/dateBuckets'
+import { toDateKey, parseExpenseDate } from '../lib/dateBuckets'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { isInstallmentPending } from '../lib/installments'
+import { EMPTY_FILTERS, countActiveFilters, matchesFilters, type TransactionFilters } from '../lib/transactionFilters'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Search, Eye, EyeOff, Pencil, Trash2, ChevronLeft, ChevronRight, EllipsisVertical } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Search, Eye, EyeOff, Pencil, Trash2, ChevronLeft, ChevronRight, EllipsisVertical, SlidersHorizontal } from 'lucide-react'
 import { AddTransactionModal } from '../components/AddTransactionModal'
 import { MoreActionsMenu } from '../components/MoreActionsMenu'
 import { SummaryView } from '../components/SummaryView'
 import { BudgetManager } from '../components/BudgetManager'
+import { RecurringManager } from '../components/RecurringManager'
+import { RecurringPendingCard } from '../components/RecurringPendingCard'
 import { useToastStore } from '../stores/toastStore'
 
+
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-muted-foreground mb-2">{label}</p>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
+  )
+}
+
+function FilterChip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+        selected ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-foreground border-input hover:bg-muted'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// Short row date ("3 oct"); the year only when it isn't the current one
+function formatRowDate(dateStr: string): string {
+  const date = parseExpenseDate(dateStr)
+  return format(date, date.getFullYear() === new Date().getFullYear() ? 'd MMM' : 'd MMM yyyy', { locale: es })
+}
 
 export function Dashboard() {
   // User store
@@ -39,6 +74,8 @@ export function Dashboard() {
     setIsTransactionModalOpen,
     isBudgetManagerOpen,
     setIsBudgetManagerOpen,
+    isRecurringManagerOpen,
+    setIsRecurringManagerOpen,
 
     activeTab,
     setActiveTab,
@@ -57,6 +94,8 @@ export function Dashboard() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [transactionToDelete, setTransactionToDelete] = useState<Expense | null>(null)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+  const [filters, setFilters] = useState<TransactionFilters>(EMPTY_FILTERS)
+  const [showFilters, setShowFilters] = useState(false)
   const [pendingDeleteKeys, setPendingDeleteKeys] = useState<Set<string>>(new Set())
   const pendingDeleteTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const [rowMenu, setRowMenu] = useState<{ expense: Expense & { _isInstallmentGroup?: boolean }; x: number; y: number } | null>(null)
@@ -350,7 +389,22 @@ export function Dashboard() {
         new Date(e.date + 'T12:00:00').getMonth() === selectedMonth &&
         new Date(e.date + 'T12:00:00').getFullYear() === selectedYear
       )
-  ).filter(e => !isPendingDelete(e))
+  ).filter(e => !isPendingDelete(e) && matchesFilters(e, filters))
+
+  const activeFilterCount = countActiveFilters(filters)
+  const toggleInList = <T,>(list: T[], item: T) => (list.includes(item) ? list.filter((x) => x !== item) : [...list, item])
+  // Amount inputs are in whole pesos; filters store cents
+  const parseAmountFilter = (text: string) => {
+    const digits = text.replace(/\D/g, '')
+    return digits ? parseInt(digits) * 100 : null
+  }
+
+  // Years in the selector: from the first transaction (or this year) to next year,
+  // so future installments are reachable and the list never runs out
+  const currentYear = new Date().getFullYear()
+  const firstYear = expenses.reduce((min, e) => Math.min(min, parseInt(e.date.slice(0, 4))), currentYear)
+  const lastYear = Math.max(currentYear + 1, ...expenses.map((e) => parseInt(e.date.slice(0, 4))), selectedYear)
+  const yearOptions = Array.from({ length: lastYear - Math.min(firstYear, selectedYear) + 1 }, (_, i) => Math.min(firstYear, selectedYear) + i)
 
   const getGroupedTransactions = () => {
     const grouped = new Map()
@@ -391,6 +445,12 @@ export function Dashboard() {
   }
 
   const groupedExpenses = getGroupedTransactions()
+  const visibleRows = groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup)
+  // While searching or filtering, show every match (not just the first 8) with a total
+  const isListNarrowed = !!searchQuery || activeFilterCount > 0
+  const narrowedExpenseTotal = visibleRows
+    .filter(e => e.transaction_type === 'expense')
+    .reduce((sum, e) => sum + (showUsd ? (e._usdCents ?? toUsdCents(e, exchangeRate, todayKey)) : Math.abs(e.amount_cents)), 0)
 
   if (isLocalLoading) {
     return (
@@ -411,7 +471,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="space-y-4 max-w-4xl mx-auto px-4 pb-24">
+    <div className="space-y-4 max-w-4xl mx-auto pb-24">
       {/* Tab Navigation */}
       <div className="flex bg-muted rounded-xl p-1">
         <button
@@ -438,6 +498,8 @@ export function Dashboard() {
 
       {activeTab === 'gastos' && (
         <div className="space-y-4">
+          <RecurringPendingCard onManage={() => setIsRecurringManagerOpen(true)} />
+
           {/* Total Card */}
           <div className="glass-card rounded-2xl p-5">
             <div className="flex items-center justify-between mb-3">
@@ -567,6 +629,7 @@ export function Dashboard() {
             </div>
             <MoreActionsMenu
               onBudgetsClick={() => setIsBudgetManagerOpen(true)}
+              onRecurringClick={() => setIsRecurringManagerOpen(true)}
               onExportClick={exportToCSV}
             />
           </div>
@@ -604,7 +667,7 @@ export function Dashboard() {
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
               className="px-3 py-2 bg-background border border-input rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-foreground text-sm"
             >
-              {[2024, 2025, 2026].map(year => (
+              {yearOptions.map(year => (
                 <option key={year} value={year}>{year}</option>
               ))}
             </select>
@@ -631,20 +694,109 @@ export function Dashboard() {
               />
               <span className="text-sm font-medium text-foreground">Ver cuotas</span>
             </label>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowAllTransactions(!showAllTransactions)}
-              className="whitespace-nowrap border-border hover:bg-muted text-sm"
-            >
-              {showAllTransactions ? 'Ver menos' : 'Ver todos'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFilters(!showFilters)}
+                aria-expanded={showFilters}
+                className={`whitespace-nowrap border-border hover:bg-muted text-sm ${activeFilterCount > 0 ? 'text-primary border-primary/40' : ''}`}
+              >
+                <SlidersHorizontal className="w-4 h-4 mr-1.5" />
+                Filtros{activeFilterCount > 0 && ` (${activeFilterCount})`}
+              </Button>
+              {!isListNarrowed && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllTransactions(!showAllTransactions)}
+                  className="whitespace-nowrap border-border hover:bg-muted text-sm"
+                >
+                  {showAllTransactions ? 'Ver menos' : 'Ver todos'}
+                </Button>
+              )}
+            </div>
           </div>
+
+          {showFilters && (
+            <div className="glass-card rounded-2xl p-4 space-y-4">
+              <FilterGroup label="Tipo">
+                {([['expense', 'Gastos'], ['income', 'Ingresos'], ['savings', 'Ahorro']] as const).map(([type, label]) => (
+                  <FilterChip
+                    key={type}
+                    selected={filters.types.includes(type)}
+                    onClick={() => setFilters({ ...filters, types: toggleInList(filters.types, type) })}
+                  >
+                    {label}
+                  </FilterChip>
+                ))}
+              </FilterGroup>
+
+              <FilterGroup label="Pago">
+                {([['debit', 'Débito'], ['credit', 'Crédito']] as const).map(([payment, label]) => (
+                  <FilterChip
+                    key={payment}
+                    selected={filters.payment === payment}
+                    onClick={() => setFilters({ ...filters, payment: filters.payment === payment ? null : payment })}
+                  >
+                    {label}
+                  </FilterChip>
+                ))}
+              </FilterGroup>
+
+              {categories.length > 0 && (
+                <FilterGroup label="Categoría">
+                  {categories.map((category) => (
+                    <FilterChip
+                      key={category.id}
+                      selected={filters.categoryIds.includes(category.id)}
+                      onClick={() => setFilters({ ...filters, categoryIds: toggleInList(filters.categoryIds, category.id) })}
+                    >
+                      {category.icon} {category.name}
+                    </FilterChip>
+                  ))}
+                </FilterGroup>
+              )}
+
+              <FilterGroup label="Monto (ARS)">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Desde"
+                  aria-label="Monto desde"
+                  value={filters.minCents !== null ? (filters.minCents / 100).toLocaleString('es-AR') : ''}
+                  onChange={(e) => setFilters({ ...filters, minCents: parseAmountFilter(e.target.value) })}
+                  className="w-28 px-3 py-1.5 bg-background border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Hasta"
+                  aria-label="Monto hasta"
+                  value={filters.maxCents !== null ? (filters.maxCents / 100).toLocaleString('es-AR') : ''}
+                  onChange={(e) => setFilters({ ...filters, maxCents: parseAmountFilter(e.target.value) })}
+                  className="w-28 px-3 py-1.5 bg-background border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </FilterGroup>
+
+              {activeFilterCount > 0 && (
+                <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-sm text-primary hover:underline">
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Recent Expenses */}
           <div className="glass-card rounded-2xl overflow-hidden">
             <div className="p-4 border-b border-border">
               <h3 className="font-semibold text-foreground">Transacciones Recientes</h3>
+              {isListNarrowed && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {visibleRows.length} {visibleRows.length === 1 ? 'resultado' : 'resultados'}
+                  {narrowedExpenseTotal > 0 && <> · {formatCurrency(narrowedExpenseTotal, showUsd ? 'USD' : 'ARS', true)} en gastos</>}
+                </p>
+              )}
             </div>
             
             {expenses.length === 0 ? (
@@ -653,15 +805,21 @@ export function Dashboard() {
                 <p>No hay transacciones registradas</p>
                 <p className="text-sm mt-1">¡Agrega tu primera transacción!</p>
               </div>
+            ) : visibleRows.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">
+                <p>No hay transacciones que coincidan</p>
+                {activeFilterCount > 0 && (
+                  <button onClick={() => setFilters(EMPTY_FILTERS)} className="text-sm text-primary hover:underline mt-2">
+                    Limpiar filtros
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="divide-y divide-border">
-                 {(showAllTransactions 
-                   ? groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup)
-                   : groupedExpenses.filter(e => showInstallments || !e._isInstallmentGroup).slice(0, 8)
-                 ).map((expense) => (
+                 {(showAllTransactions || isListNarrowed ? visibleRows : visibleRows.slice(0, 8)).map((expense) => (
                   <div
                     key={expense.id}
-                    className={`p-4 flex items-center justify-between gap-3 hover:bg-muted/50 relative group transition-colors select-none ${
+                    className={`px-3 py-3 sm:p-4 flex items-center gap-3 hover:bg-muted/50 relative group transition-colors select-none ${
                       expense._isInstallmentGroup ? 'border-l-4 border-l-primary bg-primary/5' : ''
                     }`}
                     style={{ WebkitTouchCallout: 'none' }}
@@ -671,72 +829,70 @@ export function Dashboard() {
                     onTouchEnd={clearLongPress}
                     onTouchCancel={clearLongPress}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {(() => {
-                        const category = categories.find(c => c.id === expense.category_id)
-                        // Determine icon and color based on transaction type
-                        let icon = category?.icon || '📦'
-                        let color = category?.color || '#6B7280'
-                        
-                        if (expense.transaction_type === 'income') {
-                          icon = expense.is_salary ? '💰' : '📥'
-                          color = 'hsl(var(--success))'
-                        } else if (expense.transaction_type === 'savings') {
-                          icon = '💎'
-                          color = 'hsl(var(--primary))'
-                        }
-                        
-                        return (
-                          <div
-                            className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-lg"
-                            style={{
-                              backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`,
-                              color: color
-                            }}
-                          >
-                            {icon}
-                          </div>
-                        )
-                      })()}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <p className="font-medium text-foreground truncate">
-                            {expense._isInstallmentGroup
-                              ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '')
-                              : expense.description}
-                          </p>
-                          {expense._isInstallmentGroup && (
-                            <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary">
-                              Cuota {expense.installment_number}/{expense.total_installments}
-                            </span>
-                          )}
+                    {(() => {
+                      const category = categories.find(c => c.id === expense.category_id)
+                      // Determine icon and color based on transaction type
+                      let icon = category?.icon || '📦'
+                      let color = category?.color || '#6B7280'
+                      
+                      if (expense.transaction_type === 'income') {
+                        icon = expense.is_salary ? '💰' : '📥'
+                        color = 'hsl(var(--success))'
+                      } else if (expense.transaction_type === 'savings') {
+                        icon = '💎'
+                        color = 'hsl(var(--primary))'
+                      }
+                      
+                      return (
+                        <div
+                          className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-lg"
+                          style={{
+                            backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`,
+                            color: color
+                          }}
+                        >
+                          {icon}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {(() => {
-                            if (expense.transaction_type === 'income') {
-                              return expense.is_salary ? 'Salario' : 'Ingreso'
-                            }
-                            if (expense.transaction_type === 'savings') {
-                              return 'Ahorro'
-                            }
-                            const category = categories.find(c => c.id === expense.category_id)
-                            return category?.name || 'Sin categoría'
-                          })()} • {new Date(expense.date + 'T12:00:00').toLocaleDateString('es-AR')}
-                        </p>
-                      </div>
+                      )
+                    })()}
+                    {/* Description gets all the remaining width (up to two lines);
+                        the amount and the installment badge stack on the right */}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground leading-snug line-clamp-2">
+                        {expense._isInstallmentGroup
+                          ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '')
+                          : expense.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {(() => {
+                          if (expense.transaction_type === 'income') {
+                            return expense.is_salary ? 'Salario' : 'Ingreso'
+                          }
+                          if (expense.transaction_type === 'savings') {
+                            return 'Ahorro'
+                          }
+                          const category = categories.find(c => c.id === expense.category_id)
+                          return category?.name || 'Sin categoría'
+                        })()} • {formatRowDate(expense.date)}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                    <div className="text-right">
-                      <p className={`font-semibold font-amount ${
+                    <div className="shrink-0 text-right">
+                      <p className={`font-semibold font-amount whitespace-nowrap ${
                         expense.transaction_type === 'income' ? 'text-success' :
                         expense.transaction_type === 'savings' ? 'text-primary' : 'text-foreground'
                       }`}>
                         {expense.transaction_type === 'income' ? '+' : ''}
+                        {/* No ",00" here: on narrow phones that width goes to the description */}
                         {showUsd
-                          ? formatCurrency(expense._usdCents ?? toUsdCents(expense, exchangeRate, todayKey), 'USD')
-                          : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
+                          ? formatCurrency(expense._usdCents ?? toUsdCents(expense, exchangeRate, todayKey), 'USD', true)
+                          : formatCurrency(Math.abs(expense.amount_cents), 'ARS', true)
                         }
                       </p>
+                      {expense._isInstallmentGroup && (
+                        <span className="inline-flex mt-1 items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary whitespace-nowrap">
+                          Cuota {expense.installment_number}/{expense.total_installments}
+                        </span>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -746,11 +902,10 @@ export function Dashboard() {
                       onClick={handleRowMenuButton(expense)}
                       // Don't start the row's long-press timer from a tap on the button
                       onTouchStart={(e) => e.stopPropagation()}
-                      className="-mr-2 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
+                      className="shrink-0 -mr-2 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
                     >
                       <EllipsisVertical className="w-4 h-4" />
                     </button>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -832,12 +987,6 @@ export function Dashboard() {
             editingExpense={editingExpense}
           />
 
-          {/* Budget Manager */}
-          <BudgetManager
-            isOpen={isBudgetManagerOpen}
-            onClose={() => setIsBudgetManagerOpen(false)}
-          />
-
 
 
           {/* Delete Confirmation Modal */}
@@ -877,6 +1026,16 @@ export function Dashboard() {
       )}
 
       {activeTab === 'resumen' && <SummaryView />}
+
+      {/* Rendered outside the tabs: both are opened from Gastos and from Resumen */}
+      <BudgetManager
+        isOpen={isBudgetManagerOpen}
+        onClose={() => setIsBudgetManagerOpen(false)}
+      />
+      <RecurringManager
+        isOpen={isRecurringManagerOpen}
+        onClose={() => setIsRecurringManagerOpen(false)}
+      />
     </div>
   )
 }

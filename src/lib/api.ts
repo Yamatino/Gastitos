@@ -1,6 +1,7 @@
 import { supabase } from '../services/supabase';
 import type { Expense, Category } from '../services/supabase';
 import type { SyncedSettings } from '../stores/userStore';
+import type { RecurringTransaction } from './recurring';
 import { AppError, ErrorCodes, getErrorMessage, handleSupabaseError, withRetry } from './errors';
 
 const DEFAULT_TIMEOUT = 10000; // 10 seconds
@@ -112,6 +113,8 @@ export async function createExpense(expenseData: {
   date: string;
   transaction_type: 'expense' | 'income' | 'savings';
   is_salary?: boolean;
+  recurring_id?: string | null;
+  recurring_period?: string | null;
 }): Promise<Expense> {
   const result = await queryWithTimeout(async () => {
     return supabase
@@ -276,6 +279,45 @@ export async function getTransactionCountForCategory(categoryId: string): Promis
     // head:true queries never return a data body, so count is the only signal
     return result.count || 0;
   }, MAX_RETRIES);
+}
+
+// Recurring transaction templates ("gastos fijos")
+export type RecurringInput = Omit<RecurringTransaction, 'id' | 'user_id' | 'created_at'>;
+
+export async function fetchRecurring(userId: string): Promise<RecurringTransaction[]> {
+  return queryWithTimeout<RecurringTransaction[]>(async () => {
+    return supabase
+      .from('recurring_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('day_of_month');
+  });
+}
+
+export async function createRecurring(userId: string, input: RecurringInput): Promise<RecurringTransaction> {
+  return queryWithTimeout<RecurringTransaction>(async () => {
+    return supabase
+      .from('recurring_transactions')
+      .insert({ ...input, user_id: userId })
+      .select()
+      .single();
+  }, DEFAULT_TIMEOUT, WRITE_ATTEMPTS);
+}
+
+export async function updateRecurring(id: string, updates: Partial<RecurringInput>): Promise<RecurringTransaction> {
+  return queryWithTimeout<RecurringTransaction>(async () => {
+    return supabase
+      .from('recurring_transactions')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+  }, DEFAULT_TIMEOUT, WRITE_ATTEMPTS);
+}
+
+export async function deleteRecurring(id: string): Promise<void> {
+  const { error } = await supabase.from('recurring_transactions').delete().eq('id', id);
+  if (error) throw handleSupabaseError(error, 'deleteRecurring');
 }
 
 // Synced settings (user_settings table). Returns null when the user has no row yet.

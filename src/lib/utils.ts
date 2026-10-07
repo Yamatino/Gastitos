@@ -5,11 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function formatCurrency(amount: number, currency: string = "ARS"): string {
+/** Formats cents. hideZeroCents drops a ",00" ending (used where space is tight). */
+export function formatCurrency(amount: number, currency: string = "ARS", hideZeroCents: boolean = false): string {
   const formatter = new Intl.NumberFormat("es-AR", {
     style: "currency",
     currency: currency,
-    minimumFractionDigits: 2,
+    minimumFractionDigits: hideZeroCents && amount % 100 === 0 ? 0 : 2,
   })
   return formatter.format(amount / 100)
 }
@@ -48,4 +49,14 @@ export function toUsdCents(
   if (expense.usd_amount_cents != null) return Math.abs(expense.usd_amount_cents)
   if (expense.exchange_rate && expense.exchange_rate > 0) return Math.round(arsCents / expense.exchange_rate)
   return Math.round(arsCents / currentRate)
+}
+
+/** Amount inputs take whole units with thousands dots: "1234567" -> "1.234.567". */
+export function formatAmountInput(text: string): string {
+  return text.replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+/** Reads an amount input back as whole units ("1.234.567" -> 1234567; empty -> 0). */
+export function parseAmountInput(text: string): number {
+  return parseInt(text.replace(/\D/g, '')) || 0
 }

@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { addMonths, format, subMonths } from 'date-fns'
 import { render } from './test-utils'
 import { SummaryView } from '../components/SummaryView'
 import { useDataStore } from '../stores/dataStore'
 import { useUserStore } from '../stores/userStore'
+import { useUIStore } from '../stores/uiStore'
+import userEvent from '@testing-library/user-event'
 import type { Category, Expense } from '../services/supabase'
 
 vi.mock('../services/supabase', () => ({
@@ -60,7 +62,7 @@ function buildFixtures(): Expense[] {
     makeExpense({ id: 'expense-1', transaction_type: 'expense', category_id: 'cat-food', amount_cents: 15000, date: today }),
     makeExpense({ id: 'expense-2', transaction_type: 'expense', category_id: 'cat-transport', amount_cents: 8000, date: today }),
     // A savings transfer — must NOT show up as an "expense" anywhere
-    makeExpense({ id: 'savings-1', transaction_type: 'savings', category_id: 'cat-food', amount_cents: 900000, date: today }),
+    makeExpense({ id: 'savings-1', transaction_type: 'savings', category_id: 'cat-food', amount_cents: 900000, usd_amount_cents: 900, date: today }),
     // Expenses from 6 months ago for the purchasing-power card
     makeExpense({ id: 'old-1', transaction_type: 'expense', amount_cents: 20000, date: sixMonthsAgo }),
     // An installment plan crossing a year boundary: one paid, two pending (one lands next year)
@@ -92,47 +94,67 @@ describe('SummaryView (smoke)', () => {
       ],
     }) as unknown as typeof fetch
 
+    const now = new Date()
     useDataStore.getState().setExpenses(buildFixtures())
     useDataStore.getState().setCategories(categories)
-    useUserStore.setState({ showUsd: false, exchangeRate: 1000, budgets: { 'cat-food': 20000 } })
+    useUserStore.setState({ showUsd: false, exchangeRate: 1000, budgets: { 'cat-food': 20000 }, monthlySavingsGoalUSD: 0 })
+    useUIStore.setState({ selectedMonth: now.getMonth(), selectedYear: now.getFullYear() })
   })
 
-  it('renders without crashing and shows the key cards', async () => {
+  const card = (title: string) => screen.getByRole('heading', { name: title }).closest('.glass-card') as HTMLElement
+
+  it('renders the six cards', () => {
     render(<SummaryView />)
 
-    await waitFor(() => expect(screen.queryByText('Cargando resumen...')).not.toBeInTheDocument())
-
-    expect(screen.getByText('Deuda Total Pendiente (Cuotas)')).toBeInTheDocument()
-    expect(screen.getByText('Tasa de Ahorro')).toBeInTheDocument()
-    expect(screen.getByText('Presupuestos del Mes')).toBeInTheDocument()
-    expect(screen.getByText('Estado Financiero')).toBeInTheDocument()
-    expect(screen.getByText('Cuotas en Progreso')).toBeInTheDocument()
+    for (const title of ['Gastos del mes', 'Ahorro', 'Presupuestos', 'Categorías', 'Cuotas', 'Tendencia (6 meses)']) {
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+    }
   })
 
-  it('excludes savings transactions from Top 5 Gastos del Mes', async () => {
+  it('excludes savings transactions from the month\'s biggest expenses', () => {
     render(<SummaryView />)
-    await waitFor(() => expect(screen.queryByText('Cargando resumen...')).not.toBeInTheDocument())
 
     // The savings row (9000 ARS) must not appear as a "top expense" of the month
-    const top5Section = screen.getByText('Top 5 Gastos del Mes').closest('.glass-card')!
-    expect(top5Section).not.toHaveTextContent('$ 9.000,00')
+    const categoriesCard = card('Categorías')
+    expect(categoriesCard).toHaveTextContent('Mayores gastos del mes')
+    expect(categoriesCard).not.toHaveTextContent('$ 9.000')
   })
 
-  it('shows an active installment group with correct progress', async () => {
+  it('shows an active installment group with correct progress', () => {
     render(<SummaryView />)
-    await waitFor(() => expect(screen.queryByText('Cargando resumen...')).not.toBeInTheDocument())
 
-    expect(screen.getByText('Notebook')).toBeInTheDocument()
-    expect(screen.getByText('Cuota 2 / 3')).toBeInTheDocument()
+    const installments = within(card('Cuotas'))
+    expect(installments.getByText('Notebook')).toBeInTheDocument()
+    expect(installments.getByText('Cuota 2 / 3')).toBeInTheDocument()
   })
 
-  it('renders a budget progress row for the configured category', async () => {
+  it('renders a budget progress row for the configured category', () => {
     render(<SummaryView />)
-    await waitFor(() => expect(screen.queryByText('Cargando resumen...')).not.toBeInTheDocument())
 
-    const budgetSection = screen.getByText('Presupuestos del Mes').closest('.glass-card')!
+    const budgetSection = card('Presupuestos')
     expect(budgetSection).toHaveTextContent('Comida')
     // expense-1 (15000) + this month's food-categorized installment (30000) = 45000 cents, against a 20000 budget
-    expect(budgetSection).toHaveTextContent('$ 450,00 de $ 200,00')
+    expect(budgetSection).toHaveTextContent('$ 450 de $ 200')
+  })
+
+  it('shows progress toward the monthly savings goal in USD', () => {
+    useUserStore.setState({ monthlySavingsGoalUSD: 10 })
+    render(<SummaryView />)
+
+    // savings-1 was saved as USD 9
+    expect(card('Ahorro')).toHaveTextContent(/US\$\s9 de US\$\s10/)
+  })
+
+  it('moves to the previous month and offers a way back', async () => {
+    const user = userEvent.setup()
+    render(<SummaryView />)
+
+    await user.click(screen.getByRole('button', { name: 'Mes anterior' }))
+
+    const previous = subMonths(new Date(), 1)
+    expect(useUIStore.getState().selectedMonth).toBe(previous.getMonth())
+    expect(screen.getByText('Volver al mes actual')).toBeInTheDocument()
+    // Last month only had the first Notebook installment (30000)
+    expect(card('Gastos del mes')).toHaveTextContent('$ 300')
   })
 })
