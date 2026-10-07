@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useUserStore } from '../stores/userStore'
 import { useDataStore } from '../stores/dataStore'
 import { Button } from './ui/button'
@@ -22,7 +22,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     isLightMode,
     toggleTheme,
     reducedMotion,
-    toggleReducedMotion
+    toggleReducedMotion,
+    billingDay: savedBillingDay,
+    setBillingDay: saveBillingDay
   } = useUserStore()
   
   // Data store for categories
@@ -33,11 +35,17 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   } = useDataStore()
   
   const [activeTab, setActiveTab] = useState<'general' | 'cuotas' | 'categorias'>('general')
-  const [billingDay, setBillingDay] = useState(() => {
-    const saved = localStorage.getItem('defaultBillingDay')
-    return saved ? parseInt(saved) : 10
-  })
+  const [billingDay, setBillingDay] = useState(savedBillingDay)
   const [savingsGoalInput, setSavingsGoalInput] = useState(monthlySavingsGoalUSD.toString())
+
+  // This modal stays mounted, so refresh the editable copies on each open:
+  // the saved values may have changed since (e.g. synced from another device)
+  useEffect(() => {
+    if (!isOpen) return
+    setBillingDay(savedBillingDay)
+    setSavingsGoalInput(monthlySavingsGoalUSD.toString())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
   
   // Category management states
   const [isAddingCategory, setIsAddingCategory] = useState(false)
@@ -80,7 +88,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   }
 
   const handleSaveBillingDay = () => {
-    localStorage.setItem('defaultBillingDay', billingDay.toString())
+    saveBillingDay(billingDay)
     useToastStore.getState().addToast('Día de facturación guardado', 'success')
   }
 

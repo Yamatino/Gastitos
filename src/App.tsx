@@ -11,9 +11,10 @@ import { Toaster } from './components/ui/toaster'
 import { Button } from './components/ui/button'
 import { Settings } from 'lucide-react'
 import { useToastStore } from './stores/toastStore'
+import { startSettingsSync, stopSettingsSync } from './lib/settingsSync'
 
 function App() {
-  const { user, setUser, isLightMode, setExchangeRate } = useUserStore()
+  const { user, setUser, isLightMode, setExchangeRate, clearSyncedSettings } = useUserStore()
   const { initializeCategories, resetData } = useDataStore()
   const { isSettingsOpen, setIsSettingsOpen, isLoading, setIsLoading } = useUIStore()
   const categoriesInitializedForUser = useRef<string | null>(null)
@@ -24,6 +25,10 @@ function App() {
     const root = document.documentElement
     root.classList.toggle('light', isLightMode)
     root.classList.toggle('dark', !isLightMode)
+    // Match the phone's status bar / browser chrome to the page background
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', isLightMode ? '#f5f6f9' : '#101115')
   }, [isLightMode])
 
   useEffect(() => {
@@ -41,6 +46,8 @@ function App() {
       if (event === 'SIGNED_OUT') {
         // Also covers logouts from another tab and expired sessions
         resetData()
+        stopSettingsSync()
+        clearSyncedSettings()
         categoriesInitializedForUser.current = null
       }
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
@@ -49,6 +56,7 @@ function App() {
         if (session?.user && categoriesInitializedForUser.current !== session.user.id) {
           categoriesInitializedForUser.current = session.user.id
           initializeCategories(session.user.id)
+          startSettingsSync(session.user.id)
         }
       }
     })
@@ -98,6 +106,8 @@ function App() {
   const handleLogout = async () => {
     setUser(null)
     resetData()
+    stopSettingsSync()
+    clearSyncedSettings()
     categoriesInitializedForUser.current = null
     await supabase.auth.signOut()
   }

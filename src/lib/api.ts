@@ -1,5 +1,6 @@
 import { supabase } from '../services/supabase';
 import type { Expense, Category } from '../services/supabase';
+import type { SyncedSettings } from '../stores/userStore';
 import { AppError, ErrorCodes, getErrorMessage, handleSupabaseError, withRetry } from './errors';
 
 const DEFAULT_TIMEOUT = 10000; // 10 seconds
@@ -275,6 +276,38 @@ export async function getTransactionCountForCategory(categoryId: string): Promis
     // head:true queries never return a data body, so count is the only signal
     return result.count || 0;
   }, MAX_RETRIES);
+}
+
+// Synced settings (user_settings table). Returns null when the user has no row yet.
+export async function fetchUserSettings(userId: string): Promise<SyncedSettings | null> {
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('budgets, monthly_savings_goal_usd, billing_day')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw handleSupabaseError(error, 'fetchUserSettings');
+  if (!data) return null;
+
+  return {
+    budgets: data.budgets ?? {},
+    monthlySavingsGoalUSD: Number(data.monthly_savings_goal_usd) || 0,
+    billingDay: data.billing_day,
+  };
+}
+
+export async function saveUserSettings(userId: string, settings: SyncedSettings): Promise<void> {
+  const { error } = await supabase
+    .from('user_settings')
+    .upsert({
+      user_id: userId,
+      budgets: settings.budgets,
+      monthly_savings_goal_usd: settings.monthlySavingsGoalUSD,
+      billing_day: settings.billingDay,
+      updated_at: new Date().toISOString(),
+    });
+
+  if (error) throw handleSupabaseError(error, 'saveUserSettings');
 }
 
 // Fetch exchange rate with caching. Returns null when there's no live rate and nothing

@@ -7,7 +7,7 @@ import { formatCurrency, toUsdCents } from '../lib/utils'
 import { toDateKey } from '../lib/dateBuckets'
 import { isInstallmentPending } from '../lib/installments'
 import { Button } from '../components/ui/button'
-import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Search, Eye, EyeOff, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Search, Eye, EyeOff, Pencil, Trash2, ChevronLeft, ChevronRight, EllipsisVertical } from 'lucide-react'
 import { AddTransactionModal } from '../components/AddTransactionModal'
 import { MoreActionsMenu } from '../components/MoreActionsMenu'
 import { SummaryView } from '../components/SummaryView'
@@ -61,6 +61,9 @@ export function Dashboard() {
   const pendingDeleteTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const [rowMenu, setRowMenu] = useState<{ expense: Expense & { _isInstallmentGroup?: boolean }; x: number; y: number } | null>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rowMenuRef = useRef<HTMLDivElement | null>(null)
+  // The ⋯ button that opened the menu, to give focus back to it on close
+  const rowMenuTrigger = useRef<HTMLElement | null>(null)
   const touchStartPos = useRef<{ x: number; y: number } | null>(null)
   // Get store references
   const dataStore = useDataStore()
@@ -210,8 +213,8 @@ export function Dashboard() {
     document.body.removeChild(link)
   }
 
-  // Row actions (edit/delete) are tucked behind a right-click / long-press
-  // menu instead of always-visible icons, to keep each row uncluttered.
+  // Row actions (edit/delete) live in a small menu, opened from each row's ⋯
+  // button, or by right-click / long-press as shortcuts.
   const openRowMenu = (expense: Expense & { _isInstallmentGroup?: boolean }, x: number, y: number) => {
     const menuWidth = 176
     const menuHeight = expense._isInstallmentGroup ? 52 : 96
@@ -220,7 +223,41 @@ export function Dashboard() {
     setRowMenu({ expense, x: Math.max(8, clampedX), y: Math.max(8, clampedY) })
   }
 
-  const closeRowMenu = () => setRowMenu(null)
+  const closeRowMenu = () => {
+    setRowMenu(null)
+    rowMenuTrigger.current?.focus()
+    rowMenuTrigger.current = null
+  }
+
+  const handleRowMenuButton = (expense: Expense) => (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    rowMenuTrigger.current = e.currentTarget
+    // Right-align the menu under the button
+    openRowMenu(expense, rect.right - 176, rect.bottom + 4)
+  }
+
+  // Keyboard support while the menu is open: focus the first action,
+  // Escape closes, arrow keys move between actions
+  useEffect(() => {
+    if (!rowMenu) return
+    const items = () => Array.from(rowMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    items()[0]?.focus()
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeRowMenu()
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const list = items()
+        const current = list.indexOf(document.activeElement as HTMLButtonElement)
+        const next = (current + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length
+        list[next]?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [rowMenu])
 
   const clearLongPress = () => {
     if (longPressTimer.current) {
@@ -688,7 +725,8 @@ export function Dashboard() {
                         </p>
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="text-right">
                       <p className={`font-semibold font-amount ${
                         expense.transaction_type === 'income' ? 'text-success' :
                         expense.transaction_type === 'savings' ? 'text-primary' : 'text-foreground'
@@ -699,6 +737,19 @@ export function Dashboard() {
                           : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
                         }
                       </p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Acciones"
+                      aria-haspopup="menu"
+                      aria-expanded={rowMenu?.expense.id === expense.id}
+                      onClick={handleRowMenuButton(expense)}
+                      // Don't start the row's long-press timer from a tap on the button
+                      onTouchStart={(e) => e.stopPropagation()}
+                      className="-mr-2 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
+                    >
+                      <EllipsisVertical className="w-4 h-4" />
+                    </button>
                     </div>
                   </div>
                 ))}
@@ -718,17 +769,21 @@ export function Dashboard() {
                 }}
               />
               <div
+                ref={rowMenuRef}
+                role="menu"
+                aria-label="Acciones de la transacción"
                 className="fixed z-50 w-44 glass-card rounded-xl border border-border shadow-2xl overflow-hidden py-1"
                 style={{ left: rowMenu.x, top: rowMenu.y }}
               >
                 {!rowMenu.expense._isInstallmentGroup && (
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={() => {
                       setEditingExpense(rowMenu.expense)
                       closeRowMenu()
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-muted focus:bg-muted focus:outline-none transition-colors"
                   >
                     <Pencil className="w-4 h-4 text-primary" />
                     Editar
@@ -736,12 +791,13 @@ export function Dashboard() {
                 )}
                 <button
                   type="button"
+                  role="menuitem"
                   onClick={() => {
                     setTransactionToDelete(rowMenu.expense)
                     setDeleteModalOpen(true)
                     closeRowMenu()
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                   Eliminar

@@ -40,7 +40,7 @@ interface AddTransactionModalProps {
 }
 
 export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, editingExpense = null }: AddTransactionModalProps) {
-  const { user, exchangeRate, exchangeRateAvailable, setExchangeRate } = useUserStore()
+  const { user, exchangeRate, exchangeRateAvailable, setExchangeRate, billingDay } = useUserStore()
   const { addExpense, addInstallments, updateExpense } = useDataStore()
   const isEditMode = !!editingExpense
 
@@ -195,8 +195,6 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
           })
         } else if (paymentMethod === 'credit' && installments > 1) {
           // Use stored procedure for installments
-          const savedBillingDay = localStorage.getItem('defaultBillingDay')
-          const billingDayFromSettings = savedBillingDay ? parseInt(savedBillingDay) : 10
 
           await addInstallments({
             userId: user.id,
@@ -208,7 +206,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
             categoryId,
             installmentCount: installments,
             baseDate: selectedDate,
-            billingDay: billingDayFromSettings
+            billingDay
           })
         } else {
           // Single expense

@@ -1,3 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32">
-  <text x="50" y="70" font-size="60" text-anchor="middle">🪙</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101115"/>
+  <rect x="136" y="128" width="224" height="64" rx="28" fill="#3A3E7A"/>
+  <rect x="104" y="160" width="304" height="222" rx="48" fill="#737AE8"/>
+  <rect x="290" y="236" width="146" height="70" rx="35" fill="#101115"/>
+  <circle cx="334" cy="271" r="15" fill="#737AE8"/>
 </svg>

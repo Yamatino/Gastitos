@@ -2,6 +2,20 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User } from '@supabase/supabase-js'
 
+// Settings that follow the user across devices. Everything else in this store
+// (theme, USD toggle, hidden totals...) is a per-device display preference.
+export type SyncedSettings = {
+  budgets: Record<string, number>
+  monthlySavingsGoalUSD: number
+  billingDay: number
+}
+
+const DEFAULT_SYNCED_SETTINGS: SyncedSettings = {
+  budgets: {},
+  monthlySavingsGoalUSD: 0,
+  billingDay: 10,
+}
+
 interface UserState {
   user: User | null
   setUser: (user: User | null) => void
@@ -27,6 +41,14 @@ interface UserState {
   budgets: Record<string, number>
   setBudget: (categoryId: string, amount: number) => void
   removeBudget: (categoryId: string) => void
+  
+  // Day of the month card installments are billed
+  billingDay: number
+  setBillingDay: (day: number) => void
+  
+  // Settings synced to the user_settings table (see lib/settingsSync)
+  applySyncedSettings: (settings: SyncedSettings) => void
+  clearSyncedSettings: () => void
   
   // Exchange rate
   exchangeRate: number
@@ -85,6 +107,17 @@ export const useUserStore = create<UserState>()(
         return { budgets: rest }
       }),
       
+      billingDay: DEFAULT_SYNCED_SETTINGS.billingDay,
+      setBillingDay: (day) => set({ billingDay: day }),
+      
+      applySyncedSettings: (settings) => set({
+        budgets: settings.budgets,
+        monthlySavingsGoalUSD: settings.monthlySavingsGoalUSD,
+        billingDay: settings.billingDay,
+      }),
+      // On logout, so the next account on this device doesn't inherit them
+      clearSyncedSettings: () => set({ ...DEFAULT_SYNCED_SETTINGS }),
+      
       // Exchange rate
       exchangeRate: 1000,
       exchangeRateAvailable: false,
@@ -97,8 +130,7 @@ export const useUserStore = create<UserState>()(
         isLightMode: false,
         reducedMotion: false,
         hideTotalAmount: false,
-        monthlySavingsGoalUSD: 0,
-        budgets: {},
+        ...DEFAULT_SYNCED_SETTINGS,
         exchangeRate: 1000,
         exchangeRateAvailable: false,
       }),
@@ -112,6 +144,7 @@ export const useUserStore = create<UserState>()(
         hideTotalAmount: state.hideTotalAmount,
         monthlySavingsGoalUSD: state.monthlySavingsGoalUSD,
         budgets: state.budgets,
+        billingDay: state.billingDay,
         // Note: exchangeRate is NOT persisted - always fetched from API on load
       }),
     }
