@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Expense } from '../services/supabase'
-import { getActiveInstallmentGroups, groupInstallments } from '../lib/installments'
+import { getActiveInstallmentGroups, groupInstallments, isInstallmentPending } from '../lib/installments'
 
 function makeInstallment(overrides: Partial<Expense>): Expense {
   return {
@@ -59,8 +59,8 @@ describe('installments', () => {
     const groups = groupInstallments(
       [
         makeInstallment({ id: '1', installment_number: 1, status: 'paid', date: '2026-06-01' }),
-        makeInstallment({ id: '2', installment_number: 2, status: 'pending', date: '2026-07-01' }),
-        makeInstallment({ id: '3', installment_number: 3, status: 'pending', date: '2026-08-01' }),
+        makeInstallment({ id: '2', installment_number: 2, status: 'pending', date: '2026-08-20' }),
+        makeInstallment({ id: '3', installment_number: 3, status: 'pending', date: '2026-09-20' }),
       ],
       referenceDate
     )
@@ -106,23 +106,26 @@ describe('installments', () => {
     expect(active[0].groupId).toBe('g2')
   })
 
-  it('getActiveInstallmentGroups still includes a group whose pending rows are all overdue', () => {
-    // All 3 installments are dated in the past, but the last one was never marked 'paid' in
-    // the DB. The date heuristic alone would push paidCount to 3/3 and hide this group even
-    // though it still owes money (regression: Resumen's "Cuotas en Progreso" undercounted vs.
-    // Dashboard's simpler status==='pending' count).
+  it('treats a still-pending row as paid once its billing date has passed', () => {
+    // Nothing in the app ever marks installments 'paid' (cards charge them automatically),
+    // so relying on status alone kept finished plans "active" and in the debt total forever.
     const expenses = [
-      makeInstallment({ id: '1', installment_group_id: 'g1', installment_number: 1, status: 'paid', date: '2026-06-01' }),
-      makeInstallment({ id: '2', installment_group_id: 'g1', installment_number: 2, status: 'paid', date: '2026-07-01' }),
+      makeInstallment({ id: '1', installment_group_id: 'g1', installment_number: 1, status: 'pending', date: '2026-06-01' }),
+      makeInstallment({ id: '2', installment_group_id: 'g1', installment_number: 2, status: 'pending', date: '2026-07-01' }),
       makeInstallment({ id: '3', installment_group_id: 'g1', installment_number: 3, status: 'pending', date: '2026-07-15' }),
     ]
 
-    const active = getActiveInstallmentGroups(expenses, referenceDate)
-    expect(active).toHaveLength(1)
-    expect(active[0].groupId).toBe('g1')
-    expect(active[0].remainingCount).toBe(1)
-    expect(active[0].remainingAmountCents).toBe(10000)
-    expect(active[0].currentNumber).toBe(3)
+    const groups = groupInstallments(expenses, referenceDate)
+    expect(groups[0].paidCount).toBe(3)
+    expect(groups[0].remainingCount).toBe(0)
+    expect(groups[0].remainingAmountCents).toBe(0)
+    expect(getActiveInstallmentGroups(expenses, referenceDate)).toHaveLength(0)
+  })
+
+  it('isInstallmentPending keeps a row billed today as pending', () => {
+    expect(isInstallmentPending(makeInstallment({ date: '2026-08-15' }), referenceDate)).toBe(true)
+    expect(isInstallmentPending(makeInstallment({ date: '2026-08-14' }), referenceDate)).toBe(false)
+    expect(isInstallmentPending(makeInstallment({ date: '2026-09-01', status: 'paid' }), referenceDate)).toBe(false)
   })
 
   it('remainingAmountCents sums only pending rows', () => {

@@ -153,13 +153,14 @@ export function handleSupabaseError(error: unknown, context: string): AppError {
     }
   }
   
-  // Default to unknown error
+  // Default to unknown error. Not retryable: these are things like permission or
+  // data errors that fail the same way every time, so retrying only delays the message.
   return new AppError(
     getErrorMessage(ErrorCodes.UNKNOWN_ERROR),
     ErrorCodes.UNKNOWN_ERROR,
     'medium',
     error,
-    true
+    false
   );
 }
 

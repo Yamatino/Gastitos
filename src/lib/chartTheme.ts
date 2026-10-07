@@ -1,11 +1,11 @@
 /**
- * Recharts needs literal color strings (fill/stroke), not Tailwind classes.
- * Reads the app's HSL custom properties from index.css so charts stay in
- * sync with the active theme tokens.
+ * Recharts takes colors as fill/stroke props, not Tailwind classes. Returning
+ * `hsl(var(--token))` strings (instead of resolved values) lets the browser
+ * resolve them against the active theme, so charts follow light/dark toggles
+ * without re-rendering.
  */
 export function getChartColors() {
-  const style = getComputedStyle(document.documentElement)
-  const hsl = (name: string) => `hsl(${style.getPropertyValue(name).trim()})`
+  const hsl = (name: string) => `hsl(var(${name}))`
 
   return {
     success: hsl('--success'),
@@ -15,6 +15,7 @@ export function getChartColors() {
     mutedForeground: hsl('--muted-foreground'),
     border: hsl('--border'),
     card: hsl('--card'),
+    foreground: hsl('--foreground'),
   }
 }
 

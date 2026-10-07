@@ -21,6 +21,9 @@ interface DataState {
   expenses: Expense[]
   categories: Category[]
   loadedUserId: string | null
+  // Set when the initial load fails, so the UI can offer a retry instead of
+  // showing an empty account that looks like the data is gone
+  loadError: string | null
   
   // Actions
   setExpenses: (expenses: Expense[]) => void
@@ -62,18 +65,35 @@ interface DataState {
   resetData: () => void
 }
 
+// A timed-out or dropped write may still have reached the database, so instead of a
+// plain "try again" (which would save it twice) refresh the list and say so.
+function reportWriteError(error: unknown, context: string, refresh: () => Promise<void>) {
+  const code = error instanceof AppError ? error.code : undefined
+  if (code === ErrorCodes.TIMEOUT_ERROR || code === ErrorCodes.NETWORK_ERROR) {
+    showErrorAlert(
+      new Error('No pudimos confirmar si se guardó. Revisá la lista antes de volver a intentar.'),
+      context
+    )
+    void refresh()
+    return
+  }
+  showErrorAlert(error, context)
+}
+
 export const useDataStore = create<DataState>()((set, get) => ({
   // Initial state
   expenses: [],
   categories: [],
   loadedUserId: null,
+  loadError: null,
   
   // Setters
   setExpenses: (expenses) => set({ expenses }),
   setCategories: (categories) => set({ categories }),
   setLoadedUserId: (userId) => set({ loadedUserId: userId }),
   
-  // Fetch operations
+  // Fetch operations (refreshes). On failure they keep what's already on screen:
+  // wiping it would make a network hiccup look like the data was deleted.
   fetchExpenses: async (userId) => {
     try {
       const expenses = await apiFetchExpenses(userId)
@@ -81,7 +101,6 @@ export const useDataStore = create<DataState>()((set, get) => ({
     } catch (error) {
       console.error('Error fetching expenses:', error)
       showErrorAlert(error, 'Error al cargar transacciones')
-      set({ expenses: [] })
     }
   },
   
@@ -92,7 +111,6 @@ export const useDataStore = create<DataState>()((set, get) => ({
     } catch (error) {
       console.error('Error fetching categories:', error)
       showErrorAlert(error, 'Error al cargar categorías')
-      set({ categories: [] })
     }
   },
   
@@ -106,15 +124,26 @@ export const useDataStore = create<DataState>()((set, get) => ({
     }
     
     // Set loaded user ID first to prevent concurrent calls
-    set({ loadedUserId: userId })
+    set({ loadedUserId: userId, loadError: null })
     
     try {
-      await get().fetchExpenses(userId)
-      await get().fetchCategories(userId)
+      // Calls the API directly (not the refresh actions above, which swallow
+      // errors) so a failed load is actually reported
+      const [expenses, categories] = await Promise.all([
+        apiFetchExpenses(userId),
+        apiFetchCategories(userId),
+      ])
+      // Ignore a response that arrives after logout or a user switch
+      if (get().loadedUserId !== userId) return
+      set({ expenses: expenses || [], categories: categories || [] })
     } catch (error) {
       console.error('Error loading user data:', error)
+      if (get().loadedUserId !== userId) return
       // Reset on error so we can retry
-      set({ loadedUserId: null })
+      set({
+        loadedUserId: null,
+        loadError: error instanceof Error ? error.message : getErrorMessage(ErrorCodes.UNKNOWN_ERROR),
+      })
       throw error
     }
   },
@@ -129,7 +158,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
       return newExpense
     } catch (error) {
       console.error('Error adding expense:', error)
-      showErrorAlert(error, 'Error al agregar transacción')
+      reportWriteError(error, 'Error al agregar transacción', () => get().fetchExpenses(expenseData.user_id))
       throw error
     }
   },
@@ -166,7 +195,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
       await get().fetchExpenses(params.userId)
     } catch (error) {
       console.error('Error creating installments:', error)
-      showErrorAlert(error, 'Error al crear cuotas')
+      reportWriteError(error, 'Error al crear cuotas', () => get().fetchExpenses(params.userId))
       throw error
     }
   },
@@ -228,14 +257,6 @@ export const useDataStore = create<DataState>()((set, get) => ({
   // Initialize default categories
   initializeCategories: async (userId) => {
     try {
-      // Fetch existing categories
-      const { data: existingCategories } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('user_id', userId)
-      
-      const existingNames = new Set(existingCategories?.map(c => c.name.toLowerCase()) || [])
-      
       // Define default expense categories (all deletable)
       const defaultCategories = [
         { name: 'Supermercado', icon: '🛒', color: '#F59E0B', is_default: false, user_id: userId },
@@ -243,35 +264,45 @@ export const useDataStore = create<DataState>()((set, get) => ({
         { name: 'Transporte', icon: '🚗', color: '#3B82F6', is_default: false, user_id: userId },
         { name: 'Servicios', icon: '💡', color: '#6B7280', is_default: false, user_id: userId },
       ]
-      
-      // Find missing defaults
-      const missingDefaults = defaultCategories.filter(
-        cat => !existingNames.has(cat.name.toLowerCase())
-      )
-      
-      // Insert missing categories
-      if (missingDefaults.length > 0) {
-        const { data: newCategories, error } = await supabase
+
+      // Only seed a brand-new account (no categories at all). Seeding whatever
+      // defaults were missing brought back categories the user had deleted on
+      // every login.
+      const { count, error: countError } = await supabase
+        .from('categories')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+
+      if (countError) {
+        console.error('Error checking categories:', countError)
+        return
+      }
+
+      if (count === 0) {
+        // Upsert against the (user_id, name) unique index: if two tabs both see
+        // an empty account, the second insert is ignored instead of duplicating.
+        const { error: upsertError } = await supabase
           .from('categories')
-          .insert(missingDefaults)
-          .select()
-        
-        if (error) {
-          console.error('Error creating default categories:', error)
-        } else if (newCategories) {
-          set({ categories: [...(existingCategories || []), ...newCategories] })
-          return
+          .upsert(defaultCategories, { onConflict: 'user_id,name', ignoreDuplicates: true })
+
+        if (upsertError) {
+          console.error('Error creating default categories:', upsertError)
         }
       }
-      
+
+      const { data: existingCategories } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('user_id', userId)
+        .order('name')
+
+      const existingCats = existingCategories || []
+
       // Only update state if categories are different from current state
       const currentCategories = get().categories
-      const existingCats = existingCategories || []
-      
-      // Check if arrays are different
       const hasChanged = currentCategories.length !== existingCats.length ||
         existingCats.some((cat, index) => currentCategories[index]?.id !== cat.id)
-      
+
       if (hasChanged) {
         set({ categories: existingCats })
       }
@@ -285,5 +316,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
   resetData: () => set({
     expenses: [],
     categories: [],
+    loadedUserId: null,
+    loadError: null,
   }),
 }))

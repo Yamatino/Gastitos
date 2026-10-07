@@ -30,6 +30,9 @@ interface UserState {
   
   // Exchange rate
   exchangeRate: number
+  // False until a real rate (live or cached) has loaded; exchangeRate is only a
+  // placeholder for display until then and must not be saved on transactions
+  exchangeRateAvailable: boolean
   setExchangeRate: (rate: number) => void
   
   // Reset
@@ -84,7 +87,8 @@ export const useUserStore = create<UserState>()(
       
       // Exchange rate
       exchangeRate: 1000,
-      setExchangeRate: (rate) => set({ exchangeRate: rate }),
+      exchangeRateAvailable: false,
+      setExchangeRate: (rate) => set({ exchangeRate: rate, exchangeRateAvailable: true }),
       
       // Reset
       resetUser: () => set({
@@ -96,6 +100,7 @@ export const useUserStore = create<UserState>()(
         monthlySavingsGoalUSD: 0,
         budgets: {},
         exchangeRate: 1000,
+        exchangeRateAvailable: false,
       }),
     }),
     {

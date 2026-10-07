@@ -1,62 +1,77 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Theme tokens. Dark is the default; App.tsx toggles `.light` / `.dark` on
+ * <html> so every bg-card / text-foreground / etc. follows the active theme.
+ * Neutrals are a slightly cool charcoal (dark) and soft grey-white (light);
+ * the single accent is indigo. Income = green, expenses/negative = coral.
+ */
 :root {
-  /* Dark Theme as Default - Midnight Violet */
-  --background: 0 0% 0%;              /* True black #000000 */
-  --foreground: 0 0% 98%;             /* Almost white #fafafa */
-  --card: 0 0% 4%;                    /* #0a0a0a */
-  --card-foreground: 0 0% 98%;
-  --popover: 0 0% 4%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 263 70% 66%;             /* Bright violet #a78bfa */
+  color-scheme: dark;
+  --background: 228 14% 7%;           /* #101115 */
+  --foreground: 220 14% 93%;
+  --card: 228 12% 10%;                /* #16171c */
+  --card-foreground: 220 14% 93%;
+  --popover: 228 12% 11%;
+  --popover-foreground: 220 14% 93%;
+  --primary: 236 72% 68%;             /* Soft indigo */
   --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 8%;               /* #141414 */
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 12%;                  /* #1f1f1f */
-  --muted-foreground: 240 4% 66%;     /* #a1a1aa */
-  --accent: 263 70% 66%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 70%;           /* Soft red #f87171 */
+  --secondary: 228 10% 13%;
+  --secondary-foreground: 220 14% 93%;
+  --muted: 228 10% 15%;
+  --muted-foreground: 225 8% 62%;
+  --accent: 228 10% 17%;              /* Subtle hover surface, not a brand color */
+  --accent-foreground: 220 14% 93%;
+  --destructive: 4 76% 66%;           /* Coral */
   --destructive-foreground: 0 0% 100%;
-  --border: 263 30% 20%;              /* Subtle violet border */
-  --input: 0 0% 12%;
-  --ring: 263 70% 66%;
-  --success: 158 64% 58%;             /* Bright emerald #34d399 */
-  --warning: 45 93% 55%;              /* Warm amber #fbbf24 */
-  --chart-1: 263 70% 66%;             /* Violet */
-  --chart-2: 270 60% 75%;             /* Light purple */
-  --chart-3: 239 84% 67%;             /* Indigo */
-  --chart-4: 158 64% 58%;             /* Emerald */
-  --chart-5: 45 93% 55%;              /* Amber */
+  --border: 228 9% 18%;
+  --input: 228 9% 21%;
+  --ring: 236 72% 68%;
+  --success: 152 50% 50%;             /* Calm green */
+  --success-foreground: 152 60% 8%;
+  --warning: 38 88% 58%;              /* Amber */
+  --chart-1: 236 72% 68%;
+  --chart-2: 152 50% 50%;
+  --chart-3: 38 88% 58%;
+  --chart-4: 4 76% 66%;
+  --chart-5: 199 75% 60%;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.2);
   --radius: 0.75rem;
 }
 
-/* Light mode override */
 .light {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
+  color-scheme: light;
+  --background: 220 20% 97%;          /* #f5f6f9 */
+  --foreground: 224 25% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
+  --card-foreground: 224 25% 12%;
   --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 262.1 83.3% 57.8%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 260 30% 96%;
-  --secondary-foreground: 262.1 83.3% 30%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 262.1 83.3% 57.8%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 262.1 83.3% 57.8%;
-  --success: 160 84% 39%;
-  --warning: 38 92% 50%;
+  --popover-foreground: 224 25% 12%;
+  --primary: 238 60% 56%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 16% 95%;
+  --secondary-foreground: 224 25% 12%;
+  --muted: 220 16% 94%;
+  --muted-foreground: 222 9% 44%;
+  --accent: 220 16% 93%;
+  --accent-foreground: 224 25% 12%;
+  --destructive: 2 68% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 14% 89%;
+  --input: 220 14% 85%;
+  --ring: 238 60% 56%;
+  --success: 154 62% 33%;
+  --success-foreground: 0 0% 100%;
+  --warning: 32 90% 42%;
+  --chart-1: 238 60% 56%;
+  --chart-2: 154 62% 33%;
+  --chart-3: 32 90% 42%;
+  --chart-4: 2 68% 52%;
+  --chart-5: 199 80% 42%;
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 16px rgb(16 24 40 / 0.06);
 }
 
 @theme inline {
@@ -85,6 +100,7 @@
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
   --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
   --color-warning: hsl(var(--warning));
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -105,64 +121,24 @@
   
   body {
     @apply bg-background text-foreground;
+    accent-color: hsl(var(--primary));
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
   
-  /* Monospace font for amounts */
-  .font-mono-amount {
-    font-family: 'JetBrains Mono', monospace;
+  /* Amounts: fixed-width digits so figures line up, without a monospace font */
+  .font-amount {
     font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
   }
-}
-
-/* Custom animations */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px hsl(var(--primary) / 0.3); }
-  50% { box-shadow: 0 0 30px hsl(var(--primary) / 0.5); }
-}
-
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @layer utilities {
-  /* Glassmorphism cards */
+  /* Standard card surface */
   .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-primary/10;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    @apply bg-card border border-border;
+    box-shadow: var(--shadow-card);
   }
-  
-  /* Neon glow effects */
-  .glow-primary {
-    box-shadow: 0 0 20px hsl(var(--primary) / 0.4);
-  }
-  
-  .glow-success {
-    box-shadow: 0 0 16px hsl(var(--success) / 0.3);
-  }
-  
-  .glow-destructive {
-    box-shadow: 0 0 16px hsl(var(--destructive) / 0.3);
-  }
-  
-  /* Shimmer animation for loading/progress */
-  .shimmer {
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      hsl(var(--primary) / 0.1) 50%,
-      transparent 100%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 2s infinite;
-  }
-  
+
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
     *,

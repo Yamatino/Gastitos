@@ -84,7 +84,7 @@ function buildFixtures(): Expense[] {
 
 describe('SummaryView (smoke)', () => {
   beforeEach(() => {
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => [
         { fecha: '2026-06-01', valor: 2.1 },
@@ -133,6 +133,6 @@ describe('SummaryView (smoke)', () => {
     const budgetSection = screen.getByText('Presupuestos del Mes').closest('.glass-card')!
     expect(budgetSection).toHaveTextContent('Comida')
     // expense-1 (15000) + this month's food-categorized installment (30000) = 45000 cents, against a 20000 budget
-    expect(budgetSection).toHaveTextContent('$ 450,00 / $ 200,00')
+    expect(budgetSection).toHaveTextContent('$ 450,00 de $ 200,00')
   })
 })

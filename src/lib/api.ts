@@ -4,15 +4,22 @@ import { AppError, ErrorCodes, getErrorMessage, handleSupabaseError, withRetry }
 
 const DEFAULT_TIMEOUT = 10000; // 10 seconds
 const MAX_RETRIES = 3;
+// Writes are never retried automatically: a request that timed out may still have
+// been applied on the server, and retrying it would save the transaction twice.
+const WRITE_ATTEMPTS = 1;
+// PostgREST caps every response at 1000 rows (Supabase's default max-rows).
+const PAGE_SIZE = 1000;
 
 // Wrapper for Supabase queries with timeout and retry
 export async function queryWithTimeout<T>(
   queryFn: () => Promise<{ data: T | null; error: unknown }>,
-  timeoutMs: number = DEFAULT_TIMEOUT
+  timeoutMs: number = DEFAULT_TIMEOUT,
+  maxAttempts: number = MAX_RETRIES
 ): Promise<T> {
   return withRetry(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         reject(new AppError(
           getErrorMessage(ErrorCodes.TIMEOUT_ERROR),
           ErrorCodes.TIMEOUT_ERROR,
@@ -49,30 +56,35 @@ export async function queryWithTimeout<T>(
         throw error;
       }
       throw handleSupabaseError(error, 'query');
+    } finally {
+      clearTimeout(timer);
     }
-  }, MAX_RETRIES);
+  }, maxAttempts);
 }
 
-// Fetch expenses with pagination
-export async function fetchExpenses(
-  userId: string,
-  options: {
-    limit?: number;
-    offset?: number;
-    orderBy?: string;
-    ascending?: boolean;
-  } = {}
-) {
-  const { limit = 5000, offset = 0, orderBy = 'date', ascending = false } = options;
-  
-  return queryWithTimeout(async () => {
-    return supabase
-      .from('expenses')
-      .select('*', { count: 'exact' })
-      .eq('user_id', userId)
-      .order(orderBy, { ascending })
-      .range(offset, offset + limit - 1);
-  });
+// Fetch all of a user's expenses, page by page. A single request silently stops at
+// the server's row cap, which used to drop the oldest history from every total.
+export async function fetchExpenses(userId: string): Promise<Expense[]> {
+  const all: Expense[] = [];
+
+  for (;;) {
+    const offset = all.length;
+    const page = await queryWithTimeout<Expense[]>(async () => {
+      return supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', userId)
+        // id breaks ties between same-date rows so pages never overlap or skip rows
+        .order('date', { ascending: false })
+        .order('id', { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+    });
+    all.push(...page);
+    // Stop on an empty page rather than a short one, in case the server cap is below PAGE_SIZE
+    if (page.length === 0) break;
+  }
+
+  return all;
 }
 
 // Fetch categories for user
@@ -106,7 +118,7 @@ export async function createExpense(expenseData: {
       .insert(expenseData)
       .select()
       .single();
-  });
+  }, DEFAULT_TIMEOUT, WRITE_ATTEMPTS);
   
   if (!result) {
     throw new AppError(
@@ -146,7 +158,7 @@ export async function updateExpense(
       .eq('id', id)
       .select()
       .single();
-  });
+  }, DEFAULT_TIMEOUT, WRITE_ATTEMPTS);
 
   if (!result) {
     throw new AppError(
@@ -186,11 +198,9 @@ export async function createInstallments(
     p_base_date: baseDate,
     p_billing_day: Math.round(billingDay)
   };
-  const result = await supabase.rpc('create_installments', params);
-  if (result.error) {
-    console.error('create_installments error details:', result.error);
-    throw handleSupabaseError(result.error, 'create_installments');
-  }
+  await queryWithTimeout(async () => {
+    return supabase.rpc('create_installments', params);
+  }, DEFAULT_TIMEOUT, WRITE_ATTEMPTS);
 }
 
 // Create category
@@ -207,7 +217,7 @@ export async function createCategory(categoryData: {
       .insert(categoryData)
       .select()
       .single();
-  });
+  }, DEFAULT_TIMEOUT, WRITE_ATTEMPTS);
   
   if (!result) {
     throw new AppError(
@@ -231,14 +241,15 @@ export async function deleteCategory(categoryId: string) {
       .eq('id', categoryId)
       .select()
       .single();
-  });
+  }, DEFAULT_TIMEOUT, WRITE_ATTEMPTS);
 }
 
 // Check if category has transactions
 export async function getTransactionCountForCategory(categoryId: string): Promise<number> {
   return withRetry(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         reject(new AppError(
           getErrorMessage(ErrorCodes.TIMEOUT_ERROR),
           ErrorCodes.TIMEOUT_ERROR,
@@ -255,7 +266,7 @@ export async function getTransactionCountForCategory(categoryId: string): Promis
         .select('id', { count: 'exact', head: true })
         .eq('category_id', categoryId),
       timeoutPromise
-    ]);
+    ]).finally(() => clearTimeout(timer));
 
     if (result.error) {
       throw handleSupabaseError(result.error, 'getTransactionCountForCategory');
@@ -266,8 +277,9 @@ export async function getTransactionCountForCategory(categoryId: string): Promis
   }, MAX_RETRIES);
 }
 
-// Fetch exchange rate with caching
-export async function fetchExchangeRate(): Promise<number> {
+// Fetch exchange rate with caching. Returns null when there's no live rate and nothing
+// cached: guessing one would get stored permanently on every new transaction.
+export async function fetchExchangeRate(): Promise<number | null> {
   const cacheKey = 'lastExchangeRate';
   const cacheTimeKey = 'lastExchangeRateTime';
   const cacheDuration = 24 * 60 * 60 * 1000; // 24 hours
@@ -291,9 +303,9 @@ export async function fetchExchangeRate(): Promise<number> {
     }
     
     const data = await response.json();
-    const rate = data.oficial?.value_sell || data.oficial?.value_avg;
+    const rate = Number(data.oficial?.value_sell || data.oficial?.value_avg);
     
-    if (!rate) {
+    if (!rate || rate <= 0) {
       throw new Error('Invalid exchange rate data');
     }
     
@@ -311,9 +323,7 @@ export async function fetchExchangeRate(): Promise<number> {
       return parseFloat(cachedRate);
     }
     
-    // Fallback to default
-    console.warn('Using default exchange rate: 1000');
-    return 1000;
+    return null;
   }
 }
 

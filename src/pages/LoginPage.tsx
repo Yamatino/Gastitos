@@ -29,23 +29,23 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-violet-600 via-purple-600 to-violet-800 p-4">
-      <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-8 text-center">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+      <div className="w-full max-w-sm glass-card rounded-3xl p-8 text-center">
         {/* Logo/Icon */}
         <div className="flex justify-center mb-6">
-          <div className="w-20 h-20 bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+          <div className="w-20 h-20 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-primary/25">
             <div className="flex gap-1">
-              <Wallet className="w-8 h-8 text-white" />
-              <CreditCard className="w-8 h-8 text-white/80" />
+              <Wallet className="w-8 h-8 text-primary-foreground" />
+              <CreditCard className="w-8 h-8 text-primary-foreground/80" />
             </div>
           </div>
         </div>
 
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Gastitos</h1>
-        <p className="text-gray-500 mb-8">Controla tus gastos de forma simple</p>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground mb-2">Gastitos</h1>
+        <p className="text-muted-foreground mb-8">Controla tus gastos de forma simple</p>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+          <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
             {error}
           </div>
         )}
@@ -53,7 +53,7 @@ export function LoginPage() {
         <Button
           onClick={handleGoogleLogin}
           disabled={isLoading}
-          className="w-full bg-white border-2 border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 font-semibold py-3 rounded-xl transition-all"
+          className="w-full h-11 bg-background border border-input text-foreground hover:bg-muted font-semibold rounded-xl transition-all"
         >
           {isLoading ? (
             'Conectando...'
@@ -82,7 +82,7 @@ export function LoginPage() {
           )}
         </Button>
 
-        <p className="mt-6 text-xs text-gray-400">
+        <p className="mt-6 text-xs text-muted-foreground">
           Al iniciar sesión, aceptas nuestros términos de uso
         </p>
       </div>

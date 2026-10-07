@@ -1,5 +1,5 @@
 import type { Expense } from '../services/supabase'
-import { parseExpenseDate } from './dateBuckets'
+import { toDateKey } from './dateBuckets'
 
 export type InstallmentGroup = {
   groupId: string
@@ -13,11 +13,18 @@ export type InstallmentGroup = {
   remainingAmountCents: number
 }
 
+/**
+ * True while an installment is still owed. Card installments are charged
+ * automatically and nothing in the app ever flips status to 'paid', so the
+ * billing date is the source of truth: once it has passed, the row is paid.
+ * An explicit 'paid' status still wins.
+ */
+export function isInstallmentPending(expense: Expense, referenceDate: Date = new Date()): boolean {
+  return expense.is_installment && expense.status === 'pending' && expense.date >= toDateKey(referenceDate)
+}
+
 /** Groups all installment rows (paid + pending) by installment_group_id. */
 export function groupInstallments(expenses: Expense[], referenceDate: Date = new Date()): InstallmentGroup[] {
-  const today = new Date(referenceDate)
-  today.setHours(0, 0, 0, 0)
-
   const grouped = new Map<string, Expense[]>()
   expenses
     .filter((e) => e.is_installment && e.installment_group_id)
@@ -32,17 +39,11 @@ export function groupInstallments(expenses: Expense[], referenceDate: Date = new
     const first = sorted[0]
     const totalInstallments = first.total_installments || sorted.length
 
-    // A row counts as paid if explicitly marked paid, or its date has already passed.
-    const paidCount = sorted.filter((e) => {
-      if (e.status === 'paid') return true
-      return parseExpenseDate(e.date) < today
-    }).length
-
-    const firstPending = sorted.find((e) => e.status === 'pending')
-    const currentNumber = firstPending?.installment_number || paidCount + 1
+    const pendingRows = sorted.filter((e) => isInstallmentPending(e, referenceDate))
+    const paidCount = sorted.length - pendingRows.length
+    const currentNumber = pendingRows[0]?.installment_number || paidCount + 1
 
     const totalAmountCents = sorted.reduce((sum, e) => sum + e.amount_cents, 0)
-    const pendingRows = sorted.filter((e) => e.status === 'pending')
     const remainingAmountCents = pendingRows.reduce((sum, e) => sum + e.amount_cents, 0)
 
     return {
@@ -51,8 +52,6 @@ export function groupInstallments(expenses: Expense[], referenceDate: Date = new
       categoryId: first.category_id,
       totalInstallments,
       paidCount,
-      // Based on actual DB status (not the date heuristic above), so a group with
-      // overdue-but-still-'pending' rows never silently disappears from the active list.
       remainingCount: pendingRows.length,
       currentNumber,
       totalAmountCents,

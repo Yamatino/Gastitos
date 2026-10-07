@@ -63,8 +63,6 @@ describe('Data Store', () => {
   beforeEach(async () => {
     // Reset store to initial state
     useDataStore.getState().resetData()
-    // Also reset loadedUserId since resetData doesn't include it
-    useDataStore.getState().setLoadedUserId(null)
     vi.clearAllMocks()
     
     // Reset mock implementations to default resolved values
@@ -162,18 +160,26 @@ describe('Data Store', () => {
       expect(useDataStore.getState().loadedUserId).toBe('user-123')
     })
 
-    it('should reset loadedUserId on error', async () => {
-      // Spy on fetchExpenses and make it reject
-      const error = new Error('Network error')
-      const spy = vi.spyOn(useDataStore.getState(), 'fetchExpenses').mockRejectedValue(error)
-      
-      try {
-        // Expect loadUserData to throw, but loadedUserId should be reset before throwing
-        await expect(useDataStore.getState().loadUserData('user-123')).rejects.toThrow('Network error')
-        expect(useDataStore.getState().loadedUserId).toBeNull()
-      } finally {
-        spy.mockRestore()
-      }
+    it('should reset loadedUserId and report loadError on error', async () => {
+      const { fetchExpenses } = await import('../lib/api')
+      vi.mocked(fetchExpenses).mockRejectedValue(new Error('Network error'))
+
+      await expect(useDataStore.getState().loadUserData('user-123')).rejects.toThrow('Network error')
+      expect(useDataStore.getState().loadedUserId).toBeNull()
+      expect(useDataStore.getState().loadError).toBe('Network error')
+    })
+
+    it('should ignore a response that arrives after logout', async () => {
+      const { fetchExpenses } = await import('../lib/api')
+      let resolve: (v: Expense[]) => void = () => {}
+      vi.mocked(fetchExpenses).mockReturnValue(new Promise((r) => { resolve = r }))
+
+      const load = useDataStore.getState().loadUserData('user-123')
+      useDataStore.getState().resetData()
+      resolve([{ id: 'exp-1' } as Expense])
+      await load
+
+      expect(useDataStore.getState().expenses).toEqual([])
     })
   })
 
@@ -250,6 +256,17 @@ describe('Data Store', () => {
       
       expect(useDataStore.getState().expenses).toEqual([])
       expect(showErrorAlert).toHaveBeenCalled()
+    })
+
+    it('should keep existing expenses when a refresh fails', async () => {
+      const existing = [{ id: 'exp-1' } as Expense]
+      useDataStore.getState().setExpenses(existing)
+      const { fetchExpenses } = await import('../lib/api')
+      vi.mocked(fetchExpenses).mockRejectedValue(new Error('Network error'))
+
+      await useDataStore.getState().fetchExpenses('user-1')
+
+      expect(useDataStore.getState().expenses).toEqual(existing)
     })
   })
 
@@ -430,11 +447,14 @@ describe('Data Store', () => {
       
       useDataStore.getState().setExpenses([mockExpense])
       useDataStore.getState().setCategories([mockCategory])
+      useDataStore.getState().setLoadedUserId('user-1')
       
       useDataStore.getState().resetData()
       
       expect(useDataStore.getState().expenses).toEqual([])
       expect(useDataStore.getState().categories).toEqual([])
+      // Cleared too, so logging back in as the same user reloads instead of skipping
+      expect(useDataStore.getState().loadedUserId).toBeNull()
     })
   })
 })

@@ -3,7 +3,9 @@ import { useUserStore } from '../stores/userStore'
 import { useDataStore } from '../stores/dataStore'
 import { useUIStore } from '../stores/uiStore'
 import { supabase, type Expense } from '../services/supabase'
-import { formatCurrency } from '../lib/utils'
+import { formatCurrency, toUsdCents } from '../lib/utils'
+import { toDateKey } from '../lib/dateBuckets'
+import { isInstallmentPending } from '../lib/installments'
 import { Button } from '../components/ui/button'
 import { Plus, CreditCard, Wallet, TrendingUp, ArrowRightLeft, Search, Eye, EyeOff, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { AddTransactionModal } from '../components/AddTransactionModal'
@@ -27,7 +29,8 @@ export function Dashboard() {
   // Data store
   const { 
     expenses, 
-    categories
+    categories,
+    loadError
   } = useDataStore()
   
   // UI store
@@ -66,6 +69,18 @@ export function Dashboard() {
   const prevUserIdRef = useRef<string | undefined>(undefined)
   const [isLocalLoading, setIsLocalLoading] = useState(false)
   
+  const loadData = (userId: string) => {
+    setIsLocalLoading(true)
+    dataStore.loadUserData(userId)
+      .catch((error) => {
+        // loadError in the store drives the retry screen below
+        console.error('Error loading data:', error)
+      })
+      .finally(() => {
+        setIsLocalLoading(false)
+      })
+  }
+
   // Load data when user ID changes
   useEffect(() => {
     const userId = currentUser?.id
@@ -73,32 +88,15 @@ export function Dashboard() {
     // Only run if userId changed
     if (userId && userId !== prevUserIdRef.current) {
       prevUserIdRef.current = userId
-      
-      setIsLocalLoading(true)
-      dataStore.loadUserData(userId)
-        .catch((error) => {
-          console.error('Error loading data:', error)
-          useToastStore.getState().addToast('Error al cargar datos. Por favor recarga la página.')
-        })
-        .finally(() => {
-          setIsLocalLoading(false)
-        })
+      loadData(userId)
     }
   }, [currentUser?.id])
 
-  // Function to reload data (used after adding transactions)
+  // Background refresh after saving a transaction. The store already holds the
+  // saved row; if this refresh fails it keeps the current list and shows a toast.
   const reloadData = async () => {
     if (!currentUser?.id) return
-    
-    // Don't show global loading spinner - data is already updated in local state
-    // Just refresh in background to ensure consistency
-    try {
-      // Reset loaded user ID to force reload
-      dataStore.setLoadedUserId(null)
-      await dataStore.loadUserData(currentUser.id)
-    } catch (error) {
-      console.error('Error reloading data:', error)
-    }
+    await dataStore.fetchExpenses(currentUser.id)
   }
 
   const commitDeleteTransaction = async (transaction: Expense) => {
@@ -179,6 +177,9 @@ export function Dashboard() {
 
 
   const exportToCSV = () => {
+    // Quote every field that needs it, so descriptions containing commas, quotes
+    // or line breaks don't shift the columns
+    const escapeCsv = (value: string) => /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
     const headers = ['Fecha', 'Descripción', 'Categoría', 'Monto (ARS)', 'Monto (USD)', 'Método de Pago', 'Tipo']
     const rows = expenses.map(e => {
       const category = categories.find(c => c.id === e.category_id)?.name || 'Sin categoría'
@@ -191,18 +192,19 @@ export function Dashboard() {
         e.description,
         category,
         (Math.abs(e.amount_cents) / 100).toFixed(2),
-        ((e.usd_amount_cents || 0) / 100).toFixed(2),
+        (toUsdCents(e, exchangeRate, todayKey) / 100).toFixed(2),
         e.payment_method === 'credit' ? 'Crédito' : 'Débito',
         typeLabel
       ]
     })
     
-    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const csvContent = [headers, ...rows].map(row => row.map(escapeCsv).join(',')).join('\r\n')
+    // The BOM makes Excel read the file as UTF-8 (otherwise "Descripción" shows as "DescripciÃ³n")
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
     const url = URL.createObjectURL(blob)
     link.setAttribute('href', url)
-    link.setAttribute('download', `gastitos_${new Date().toISOString().split('T')[0]}.csv`)
+    link.setAttribute('download', `gastitos_${toDateKey()}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -274,23 +276,28 @@ export function Dashboard() {
   const monthlyExpensesList = monthlyTransactions.filter(t => t.transaction_type === 'expense')
   const monthlySavings = monthlyTransactions.filter(t => t.transaction_type === 'savings')
 
+  // USD uses each transaction's own rate (see toUsdCents), not today's, so a past
+  // month's USD totals don't change every time the peso moves
+  const todayKey = toDateKey()
+  const sumUsd = (list: Expense[]) => list.reduce((sum, t) => sum + toUsdCents(t, exchangeRate, todayKey), 0)
+
   const totalIncomeArs = monthlyIncome.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
-  const totalIncomeUsd = Math.round(totalIncomeArs / exchangeRate)
+  const totalIncomeUsd = sumUsd(monthlyIncome)
   
   const totalExpensesArs = monthlyExpensesList.reduce((sum, t) => sum + t.amount_cents, 0)
-  const totalExpensesUsd = Math.round(totalExpensesArs / exchangeRate)
+  const totalExpensesUsd = sumUsd(monthlyExpensesList)
   
   const totalSavingsArs = monthlySavings.reduce((sum, t) => sum + Math.abs(t.amount_cents), 0)
-  const totalSavingsUsd = Math.round(totalSavingsArs / exchangeRate)
+  const totalSavingsUsd = sumUsd(monthlySavings)
   
   const balanceArs = totalIncomeArs - totalExpensesArs - totalSavingsArs
-  const balanceUsd = Math.round(balanceArs / exchangeRate)
+  const balanceUsd = totalIncomeUsd - totalExpensesUsd - totalSavingsUsd
 
   // Count unique installment groups with pending installments
   const pendingCuotas = Array.from(
     new Set(
       expenses
-        .filter(e => e.is_installment && e.status === 'pending')
+        .filter(e => isInstallmentPending(e))
         .map(e => e.installment_group_id)
     )
   )
@@ -330,12 +337,13 @@ export function Dashboard() {
       if (group._isGrouped) {
         const total = group._installments.reduce((sum: number, inst: Expense) => sum + inst.amount_cents, 0)
         const nextPending = group._installments
-          .filter((inst: Expense) => inst.status === 'pending')
+          .filter((inst: Expense) => isInstallmentPending(inst))
           .sort((a: Expense, b: Expense) => new Date(a.date + 'T12:00:00').getTime() - new Date(b.date + 'T12:00:00').getTime())[0]
         
         return {
           ...group,
           amount_cents: total,
+          _usdCents: sumUsd(group._installments),
           _displayText: `Cuota ${group.installment_number}/${group.total_installments}`,
           _nextPendingDate: nextPending?.date,
           _isInstallmentGroup: true
@@ -347,33 +355,20 @@ export function Dashboard() {
 
   const groupedExpenses = getGroupedTransactions()
 
-  // Get badge for transaction type
-  const getTransactionBadge = (expense: Expense) => {
-    if (expense.transaction_type === 'income') {
-      return expense.is_salary ? (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success/20 text-success">
-          💰 Salario
-        </span>
-      ) : (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success/20 text-success">
-          📥 Ingreso
-        </span>
-      )
-    }
-    if (expense.transaction_type === 'savings') {
-      return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/20 text-primary">
-          💎 Ahorro
-        </span>
-      )
-    }
-    return null
-  }
-
   if (isLocalLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-violet-600">Cargando...</div>
+        <div className="text-muted-foreground">Cargando...</div>
+      </div>
+    )
+  }
+
+  if (loadError && currentUser) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 h-64 text-center">
+        <p className="text-foreground font-semibold">No pudimos cargar tus datos</p>
+        <p className="text-sm text-muted-foreground">{loadError}</p>
+        <Button onClick={() => loadData(currentUser.id)}>Reintentar</Button>
       </div>
     )
   }
@@ -381,13 +376,13 @@ export function Dashboard() {
   return (
     <div className="space-y-4 max-w-4xl mx-auto px-4 pb-24">
       {/* Tab Navigation */}
-      <div className="flex bg-card rounded-xl p-1 shadow-lg border border-border">
+      <div className="flex bg-muted rounded-xl p-1">
         <button
           onClick={() => setActiveTab('gastos')}
           className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
             activeTab === 'gastos'
-              ? 'bg-primary text-primary-foreground shadow-lg glow-primary'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              ? 'bg-card dark:bg-input text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Gastos
@@ -396,8 +391,8 @@ export function Dashboard() {
           onClick={() => setActiveTab('resumen')}
           className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
             activeTab === 'resumen'
-              ? 'bg-primary text-primary-foreground shadow-lg glow-primary'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              ? 'bg-card dark:bg-input text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Resumen
@@ -433,8 +428,8 @@ export function Dashboard() {
             </div>
             
             <div className="text-center">
-              <div className={`text-4xl font-bold mb-1 font-mono-amount ${
-                balanceArs >= 0 ? 'text-success glow-success' : 'text-destructive glow-destructive'
+              <div className={`text-3xl sm:text-4xl font-bold tracking-tight mb-1 font-amount ${
+                balanceArs >= 0 ? 'text-success' : 'text-destructive'
               }`}>
                 {hideTotalAmount ? (
                   '****'
@@ -455,30 +450,30 @@ export function Dashboard() {
             
             {/* Income vs Expenses */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-border">
-              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-success/10 rounded-xl">
+              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-secondary rounded-xl">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-success"></span>
                   <p className="text-sm sm:text-xs text-muted-foreground">Ingresos</p>
                 </div>
-                <p className="text-lg sm:text-base font-semibold text-success font-mono-amount">
+                <p className="text-lg sm:text-base font-semibold text-success font-amount">
                   {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalIncomeUsd, 'USD') : formatCurrency(totalIncomeArs, 'ARS'))}
                 </p>
               </div>
-              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-destructive/10 rounded-xl">
+              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-secondary rounded-xl">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-destructive"></span>
                   <p className="text-sm sm:text-xs text-muted-foreground">Gastos</p>
                 </div>
-                <p className="text-lg sm:text-base font-semibold text-destructive font-mono-amount">
+                <p className="text-lg sm:text-base font-semibold text-destructive font-amount">
                   {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalExpensesUsd, 'USD') : formatCurrency(totalExpensesArs, 'ARS'))}
                 </p>
               </div>
-              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-primary/10 rounded-xl">
+              <div className="flex sm:flex-col items-center justify-between sm:justify-center p-3 sm:p-2 bg-secondary rounded-xl">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-primary"></span>
                   <p className="text-sm sm:text-xs text-muted-foreground">Ahorro</p>
                 </div>
-                <p className="text-lg sm:text-base font-semibold text-primary font-mono-amount">
+                <p className="text-lg sm:text-base font-semibold text-primary font-amount">
                   {hideTotalAmount ? '****' : (showUsd ? formatCurrency(totalSavingsUsd, 'USD') : formatCurrency(totalSavingsArs, 'ARS'))}
                 </p>
               </div>
@@ -487,7 +482,7 @@ export function Dashboard() {
 
           {/* Quick Stats - Compact Row */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="glass-card rounded-xl p-3 border border-primary/20">
+            <div className="glass-card rounded-xl p-3">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-primary/20 rounded-lg">
                   <CreditCard className="w-4 h-4 text-primary" />
@@ -499,7 +494,7 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="glass-card rounded-xl p-3 border border-success/20">
+            <div className="glass-card rounded-xl p-3">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-success/20 rounded-lg">
                   <TrendingUp className="w-4 h-4 text-success" />
@@ -545,7 +540,7 @@ export function Dashboard() {
           )}
 
           {/* Month Selector */}
-          <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex gap-2 items-center">
             <Button
               variant="outline"
               size="sm"
@@ -586,6 +581,19 @@ export function Dashboard() {
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
+          </div>
+
+          {/* List filters */}
+          <div className="flex items-center justify-between gap-2">
+            <label className="flex items-center gap-2 px-3 py-1.5 bg-secondary border border-border rounded-lg cursor-pointer hover:bg-muted transition-colors">
+              <input
+                type="checkbox"
+                checked={showInstallments}
+                onChange={(e) => setShowInstallments(e.target.checked)}
+                className="w-4 h-4 text-primary rounded focus:ring-primary bg-background border-input"
+              />
+              <span className="text-sm font-medium text-foreground">Ver cuotas</span>
+            </label>
             <Button
               variant="outline"
               size="sm"
@@ -595,17 +603,6 @@ export function Dashboard() {
               {showAllTransactions ? 'Ver menos' : 'Ver todos'}
             </Button>
           </div>
-
-          {/* Show Installments Toggle */}
-          <label className="flex items-center gap-2 px-3 py-2 bg-primary/10 border border-primary/30 rounded-xl cursor-pointer hover:bg-primary/20 transition-colors w-fit">
-            <input
-              type="checkbox"
-              checked={showInstallments}
-              onChange={(e) => setShowInstallments(e.target.checked)}
-              className="w-4 h-4 text-primary rounded focus:ring-primary bg-background border-input"
-            />
-            <span className="text-sm font-medium text-primary">Ver cuotas</span>
-          </label>
 
           {/* Recent Expenses */}
           <div className="glass-card rounded-2xl overflow-hidden">
@@ -627,7 +624,7 @@ export function Dashboard() {
                  ).map((expense) => (
                   <div
                     key={expense.id}
-                    className={`p-4 flex items-center justify-between hover:bg-muted/50 relative group transition-colors select-none ${
+                    className={`p-4 flex items-center justify-between gap-3 hover:bg-muted/50 relative group transition-colors select-none ${
                       expense._isInstallmentGroup ? 'border-l-4 border-l-primary bg-primary/5' : ''
                     }`}
                     style={{ WebkitTouchCallout: 'none' }}
@@ -637,7 +634,7 @@ export function Dashboard() {
                     onTouchEnd={clearLongPress}
                     onTouchCancel={clearLongPress}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       {(() => {
                         const category = categories.find(c => c.id === expense.category_id)
                         // Determine icon and color based on transaction type
@@ -646,17 +643,17 @@ export function Dashboard() {
                         
                         if (expense.transaction_type === 'income') {
                           icon = expense.is_salary ? '💰' : '📥'
-                          color = '#10B981'
+                          color = 'hsl(var(--success))'
                         } else if (expense.transaction_type === 'savings') {
                           icon = '💎'
-                          color = '#3B82F6'
+                          color = 'hsl(var(--primary))'
                         }
                         
                         return (
                           <div
-                            className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                            className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-lg"
                             style={{
-                              backgroundColor: `${color}30`,
+                              backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`,
                               color: color
                             }}
                           >
@@ -664,19 +661,18 @@ export function Dashboard() {
                           </div>
                         )
                       })()}
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium text-foreground">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <p className="font-medium text-foreground truncate">
                             {expense._isInstallmentGroup
                               ? expense.description.replace(/\s*\(\d+\/\d+\)$/, '')
                               : expense.description}
                           </p>
                           {expense._isInstallmentGroup && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/20 text-primary">
+                            <span className="inline-flex shrink-0 items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary">
                               Cuota {expense.installment_number}/{expense.total_installments}
                             </span>
                           )}
-                          {getTransactionBadge(expense)}
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {(() => {
@@ -692,14 +688,14 @@ export function Dashboard() {
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`font-semibold font-mono-amount ${
+                    <div className="text-right shrink-0">
+                      <p className={`font-semibold font-amount ${
                         expense.transaction_type === 'income' ? 'text-success' :
-                        expense.transaction_type === 'savings' ? 'text-primary' : 'text-destructive'
+                        expense.transaction_type === 'savings' ? 'text-primary' : 'text-foreground'
                       }`}>
                         {expense.transaction_type === 'income' ? '+' : ''}
                         {showUsd
-                          ? formatCurrency(Math.round(Math.abs(expense.amount_cents) / exchangeRate), 'USD')
+                          ? formatCurrency(expense._usdCents ?? toUsdCents(expense, exchangeRate, todayKey), 'USD')
                           : formatCurrency(Math.abs(expense.amount_cents), 'ARS')
                         }
                       </p>
@@ -762,7 +758,7 @@ export function Dashboard() {
                 setIsTransactionModalOpen(true)
               }}
               size="lg"
-              className="w-14 h-14 rounded-full bg-primary hover:opacity-90 text-primary-foreground shadow-lg glow-primary transition-all"
+              className="w-14 h-14 rounded-full bg-primary hover:opacity-90 text-primary-foreground shadow-lg shadow-primary/30 transition-all"
             >
               <Plus className="w-6 h-6" />
             </Button>
@@ -791,7 +787,7 @@ export function Dashboard() {
           {/* Delete Confirmation Modal */}
           {deleteModalOpen && transactionToDelete && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
               <div className="relative glass-card rounded-2xl p-6 shadow-2xl max-w-sm w-full border border-border">
                 <h3 className="text-lg font-bold text-foreground mb-2">
                   {(transactionToDelete as Expense & { _isInstallmentGroup?: boolean })._isInstallmentGroup

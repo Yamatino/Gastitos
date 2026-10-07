@@ -5,8 +5,8 @@ import { useDataStore } from '../stores/dataStore'
 import { useUIStore } from '../stores/uiStore'
 import { formatCurrency, toDisplayCurrency } from '../lib/utils'
 import { supabase } from '../services/supabase'
-import { getTrailingMonths, getUpcomingMonths, isInMonth, parseExpenseDate } from '../lib/dateBuckets'
-import { getActiveInstallmentGroups } from '../lib/installments'
+import { getTrailingMonths, getUpcomingMonths, isInMonth, parseExpenseDate, toDateKey } from '../lib/dateBuckets'
+import { getActiveInstallmentGroups, isInstallmentPending } from '../lib/installments'
 import { aggregateByCategory, getCurrentMonthExpenseByCategory } from '../lib/categoryAggregation'
 import { getChartColors } from '../lib/chartTheme'
 import { Button } from './ui/button'
@@ -20,6 +20,10 @@ import { fetchInflationData, type ProcessedInflation } from '../services/inflati
 import { useToastStore } from '../stores/toastStore'
 
 type CategoryPeriod = 'month' | '3months' | 'all'
+
+// Compact axis ticks ("1,8 M", "500 mil") so large peso amounts fit the narrow Y axis
+const compactAxisFormatter = new Intl.NumberFormat('es-AR', { notation: 'compact', maximumFractionDigits: 1 })
+const formatAxisTick = (value: number) => compactAxisFormatter.format(value)
 
 const CATEGORY_PERIOD_LABELS: Record<CategoryPeriod, string> = {
   month: 'Este mes',
@@ -89,7 +93,7 @@ export function SummaryView() {
 
   // Total pending installment debt
   const debtTotals = useMemo(() => {
-    const pending = expenses.filter((e) => e.is_installment && e.status === 'pending')
+    const pending = expenses.filter((e) => isInstallmentPending(e))
     const totalDebtCents = pending.reduce((sum, e) => sum + e.amount_cents, 0)
     const thisMonthDebtCents = pending
       .filter((e) => isInMonth(parseExpenseDate(e.date), monthStart))
@@ -103,7 +107,7 @@ export function SummaryView() {
 
   // Upcoming 3-month debt breakdown
   const threeMonthDebt = useMemo(() => {
-    const pending = expenses.filter((e) => e.is_installment && e.status === 'pending')
+    const pending = expenses.filter((e) => isInstallmentPending(e))
     const buckets = upcomingMonths.map((bucket) => ({
       key: bucket.key,
       label: bucket.label,
@@ -152,7 +156,7 @@ export function SummaryView() {
     for (let i = 29; i >= 0; i--) {
       const d = new Date(today)
       d.setDate(d.getDate() - i)
-      const dateStr = d.toISOString().split('T')[0]
+      const dateStr = toDateKey(d)
 
       const dayExpenses = expenses
         .filter((e) => e.date === dateStr && e.transaction_type === 'expense')
@@ -295,35 +299,35 @@ export function SummaryView() {
     borderRadius: '8px',
     border: `1px solid ${chartColors.border}`,
     background: chartColors.card,
-    color: chartColors.mutedForeground,
+    color: chartColors.foreground,
   }
 
   return (
     <div className="space-y-6 pb-20">
       {/* Total Debt Card (Cuotas) */}
-      <div className="glass-card rounded-2xl p-5 sm:p-6 border border-destructive/20">
+      <div className="glass-card rounded-2xl p-5 sm:p-6">
         <div className="flex items-center gap-2 mb-4">
           <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-destructive" />
           <h2 className="text-base sm:text-lg font-semibold text-foreground">Deuda Total Pendiente (Cuotas)</h2>
         </div>
-        <div className="text-2xl sm:text-3xl font-bold mb-3 text-destructive font-mono-amount">
+        <div className="text-2xl sm:text-3xl font-bold mb-3 text-destructive font-amount">
           {fmt(debtTotals.totalDebtCents)}
         </div>
         <div className="flex flex-wrap gap-3 text-sm">
           <div className="bg-muted/40 rounded-lg px-3 py-2">
             <span className="text-muted-foreground">Este mes: </span>
-            <span className="font-semibold text-foreground font-mono-amount">{fmt(debtTotals.thisMonthDebtCents)}</span>
+            <span className="font-semibold text-foreground font-amount">{fmt(debtTotals.thisMonthDebtCents)}</span>
           </div>
           <div className="bg-muted/40 rounded-lg px-3 py-2">
             <span className="text-muted-foreground">Próximos meses: </span>
-            <span className="font-semibold text-foreground font-mono-amount">{fmt(debtTotals.nextMonthsDebtCents)}</span>
+            <span className="font-semibold text-foreground font-amount">{fmt(debtTotals.nextMonthsDebtCents)}</span>
           </div>
         </div>
       </div>
 
       {/* Inflation Card */}
       {inflationData?.latest && (
-        <div className="glass-card rounded-2xl p-4 sm:p-6 border border-warning/20">
+        <div className="glass-card rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
             <div className="bg-warning/15 p-2 rounded-lg">
               <span className="text-xl">📈</span>
@@ -333,7 +337,7 @@ export function SummaryView() {
 
           <div className="grid grid-cols-2 gap-3 sm:gap-4">
             <div>
-              <div className="text-2xl sm:text-3xl font-bold text-warning font-mono-amount">
+              <div className="text-2xl sm:text-3xl font-bold text-warning font-amount">
                 {inflationData.latest.valor.toFixed(1)}%
               </div>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">
@@ -344,7 +348,7 @@ export function SummaryView() {
               </p>
             </div>
             <div>
-              <div className="text-2xl sm:text-3xl font-bold text-warning font-mono-amount">
+              <div className="text-2xl sm:text-3xl font-bold text-warning font-amount">
                 {inflationData.cumulativeSixMonths.toFixed(1)}%
               </div>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">Acumulado 6 meses</p>
@@ -357,15 +361,7 @@ export function SummaryView() {
 
       {/* Savings Rate and 3-Month Debt Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div
-          className={`glass-card rounded-2xl p-5 sm:p-6 border ${
-            savingsRate.rate >= 20
-              ? 'border-success/30'
-              : savingsRate.rate >= 10
-                ? 'border-warning/30'
-                : 'border-destructive/30'
-          }`}
-        >
+        <div className="glass-card rounded-2xl p-5 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
             <PiggyBank
               className={`w-5 h-5 sm:w-6 sm:h-6 ${
@@ -375,7 +371,7 @@ export function SummaryView() {
             <h2 className="text-base sm:text-lg font-semibold text-foreground">Tasa de Ahorro</h2>
           </div>
           <div
-            className={`text-2xl sm:text-3xl font-bold mb-2 font-mono-amount ${
+            className={`text-2xl sm:text-3xl font-bold mb-2 font-amount ${
               savingsRate.rate >= 20 ? 'text-success' : savingsRate.rate >= 10 ? 'text-warning' : 'text-destructive'
             }`}
           >
@@ -390,19 +386,19 @@ export function SummaryView() {
           </div>
         </div>
 
-        <div className="glass-card rounded-2xl p-5 sm:p-6 border border-border">
+        <div className="glass-card rounded-2xl p-5 sm:p-6">
           <div className="flex items-center gap-2 mb-4">
             <CalendarDays className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
             <h2 className="text-base sm:text-lg font-semibold text-foreground">Deuda Próximos 3 Meses</h2>
           </div>
-          <div className="text-2xl sm:text-3xl font-bold mb-3 text-primary font-mono-amount">
+          <div className="text-2xl sm:text-3xl font-bold mb-3 text-primary font-amount">
             {fmt(threeMonthDebt.totalCents)}
           </div>
           <div className="flex flex-col gap-2 text-sm">
             {threeMonthDebt.buckets.map((b) => (
               <div key={b.key} className="bg-muted/40 rounded-lg px-3 py-1.5 flex justify-between">
                 <span className="text-muted-foreground capitalize">{b.label}:</span>
-                <span className="font-semibold text-foreground font-mono-amount">{fmt(b.amountCents)}</span>
+                <span className="font-semibold text-foreground font-amount">{fmt(b.amountCents)}</span>
               </div>
             ))}
           </div>
@@ -410,7 +406,7 @@ export function SummaryView() {
       </div>
 
       {/* Budget vs Actual */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6 border border-border">
+      <div className="glass-card rounded-2xl p-4 sm:p-6">
         <div className="flex items-center justify-between mb-4 gap-2">
           <div className="flex items-center gap-2">
             <Target className="w-5 h-5 text-primary" />
@@ -439,8 +435,8 @@ export function SummaryView() {
                     <span className="text-lg shrink-0">{b.icon}</span>
                     <span className="font-medium text-foreground truncate">{b.name}</span>
                   </div>
-                  <span className="text-sm text-muted-foreground whitespace-nowrap font-mono-amount">
-                    {fmt(b.spentCents)} / {fmt(b.budgetCents)}
+                  <span className="text-sm font-medium text-muted-foreground font-amount">
+                    {b.percentage.toFixed(0)}%
                   </span>
                 </div>
                 <div className="h-2 bg-muted rounded-full overflow-hidden">
@@ -451,6 +447,9 @@ export function SummaryView() {
                     style={{ width: `${Math.min(b.percentage, 100)}%` }}
                   />
                 </div>
+                <p className="mt-1.5 text-xs text-muted-foreground font-amount">
+                  {fmt(b.spentCents)} de {fmt(b.budgetCents)}
+                </p>
               </div>
             ))}
           </div>
@@ -458,14 +457,14 @@ export function SummaryView() {
       </div>
 
       {/* Monthly Comparison Chart */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6 border border-border">
+      <div className="glass-card rounded-2xl p-4 sm:p-6">
         <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Ingresos vs Gastos (Últimos 6 meses)</h3>
         <div className="h-48 sm:h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={last6MonthsChartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors.border} />
               <XAxis dataKey="name" stroke={chartColors.mutedForeground} fontSize={10} tickMargin={5} />
-              <YAxis stroke={chartColors.mutedForeground} fontSize={10} width={40} />
+              <YAxis stroke={chartColors.mutedForeground} fontSize={10} width={44} tickFormatter={formatAxisTick} />
               <Tooltip
                 formatter={(value) => formatCurrency((value as number) * 100, 'ARS')}
                 contentStyle={tooltipStyle}
@@ -481,7 +480,7 @@ export function SummaryView() {
       {/* Top Categories & Financial Insights */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Top Categories Pie Chart */}
-        <div className="glass-card rounded-2xl p-4 sm:p-6 border border-border">
+        <div className="glass-card rounded-2xl p-4 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <h3 className="text-base sm:text-lg font-semibold text-foreground">
               Gastos por Categoría · {CATEGORY_PERIOD_LABELS[categoryPeriod]}
@@ -516,7 +515,6 @@ export function SummaryView() {
                       labelLine={false}
                       label={({ percent }) => `${((percent || 0) * 100).toFixed(0)}%`}
                       outerRadius={60}
-                      fill="#8884d8"
                       dataKey="value"
                     >
                       {categoryBreakdown.map((entry, index) => (
@@ -541,7 +539,7 @@ export function SummaryView() {
         </div>
 
         {/* Financial Insights */}
-        <div className="glass-card rounded-2xl p-4 sm:p-6 border border-border">
+        <div className="glass-card rounded-2xl p-4 sm:p-6">
           <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Estado Financiero</h3>
 
           {/* Status Indicator */}
@@ -597,7 +595,7 @@ export function SummaryView() {
                 <TrendingUp className="w-5 h-5 text-primary" />
                 <span className="text-foreground">Gasto promedio diario</span>
               </div>
-              <span className="font-bold text-primary font-mono-amount">{fmt(dailyAverage)}</span>
+              <span className="font-bold text-primary font-amount">{fmt(dailyAverage)}</span>
             </div>
           </div>
         </div>
@@ -605,7 +603,7 @@ export function SummaryView() {
 
       {/* Purchasing Power Impact */}
       {purchasingPower && (
-        <div className="glass-card rounded-2xl p-4 sm:p-6 border border-border">
+        <div className="glass-card rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
             <div className="bg-warning/15 p-2 rounded-lg">
               <span className="text-xl">💸</span>
@@ -628,7 +626,7 @@ export function SummaryView() {
                     <p className="text-sm text-muted-foreground">Gasto mensual promedio de entonces</p>
                     <p className="text-xs text-muted-foreground/70">Sin ajustar</p>
                   </div>
-                  <span className="text-xl font-bold text-foreground font-mono-amount">{fmt(purchasingPower.avgOldCents)}</span>
+                  <span className="text-xl font-bold text-foreground font-amount">{fmt(purchasingPower.avgOldCents)}</span>
                 </div>
 
                 <div className="flex justify-between items-center p-4 bg-warning/10 rounded-xl border border-warning/20">
@@ -638,7 +636,7 @@ export function SummaryView() {
                       Ajustado por inflación ({purchasingPower.cumulativeInflation.toFixed(1)}%)
                     </p>
                   </div>
-                  <span className="text-xl font-bold text-warning font-mono-amount">{fmt(purchasingPower.adjustedCents)}</span>
+                  <span className="text-xl font-bold text-warning font-amount">{fmt(purchasingPower.adjustedCents)}</span>
                 </div>
 
                 <div className="text-center p-3 bg-destructive/10 rounded-lg">
@@ -654,14 +652,14 @@ export function SummaryView() {
       )}
 
       {/* Daily Spending Trend */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6 border border-border">
+      <div className="glass-card rounded-2xl p-4 sm:p-6">
         <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Tendencia de Gastos (Últimos 30 días)</h3>
         <div className="h-40 sm:h-48">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={last30Days} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartColors.border} />
               <XAxis dataKey="day" stroke={chartColors.mutedForeground} fontSize={9} interval={4} tickMargin={5} />
-              <YAxis stroke={chartColors.mutedForeground} fontSize={10} width={40} />
+              <YAxis stroke={chartColors.mutedForeground} fontSize={10} width={44} tickFormatter={formatAxisTick} />
               <Tooltip
                 formatter={(value) => formatCurrency((value as number) * 100, 'ARS')}
                 contentStyle={tooltipStyle}
@@ -679,7 +677,7 @@ export function SummaryView() {
       </div>
 
       {/* Top 5 Expenses */}
-      <div className="glass-card rounded-2xl p-4 sm:p-6 border border-border">
+      <div className="glass-card rounded-2xl p-4 sm:p-6">
         <h3 className="text-base sm:text-lg font-semibold text-foreground mb-4">Top 5 Gastos del Mes</h3>
         <div className="space-y-3">
           {top5Expenses.map((expense, index) => {
@@ -695,7 +693,7 @@ export function SummaryView() {
                     <p className="text-xs text-muted-foreground truncate">{category?.name}</p>
                   </div>
                 </div>
-                <span className="font-semibold text-primary whitespace-nowrap font-mono-amount">
+                <span className="font-semibold text-primary whitespace-nowrap font-amount">
                   {fmt(expense.amount_cents)}
                 </span>
               </div>
@@ -710,7 +708,7 @@ export function SummaryView() {
 
       {/* All Active Installments */}
       {activeInstallmentGroups.length > 0 && (
-        <div className="glass-card rounded-2xl p-4 sm:p-6 border border-border">
+        <div className="glass-card rounded-2xl p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Package className="w-5 h-5 text-primary" />
@@ -762,7 +760,7 @@ export function SummaryView() {
                     <span className="text-muted-foreground">
                       {group.paidCount} pagadas • {group.remainingCount} restantes
                     </span>
-                    <span className="font-semibold text-foreground whitespace-nowrap font-mono-amount">
+                    <span className="font-semibold text-foreground whitespace-nowrap font-amount">
                       {fmt(group.remainingAmountCents)} restantes
                     </span>
                   </div>
@@ -776,8 +774,8 @@ export function SummaryView() {
       {/* Delete Confirmation Modal */}
       {deleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
-          <div className="relative glass-card rounded-2xl p-6 shadow-2xl max-w-sm w-full border border-border">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteModalOpen(false)} />
+          <div className="relative glass-card rounded-2xl p-6 shadow-2xl max-w-sm w-full">
             <h3 className="text-lg font-bold text-foreground mb-2">Eliminar todas las cuotas</h3>
             <p className="text-muted-foreground mb-4">
               ¿Estás seguro de que quieres eliminar TODAS las cuotas de este pago?

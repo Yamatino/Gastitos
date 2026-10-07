@@ -6,6 +6,14 @@ export function parseExpenseDate(dateStr: string): Date {
   return new Date(`${dateStr}T12:00:00`)
 }
 
+/**
+ * Formats a Date as 'YYYY-MM-DD' in local time. Don't use toISOString() for this:
+ * it's UTC, so from 21:00 on in Argentina it already returns tomorrow's date.
+ */
+export function toDateKey(date: Date = new Date()): string {
+  return format(date, 'yyyy-MM-dd')
+}
+
 export type MonthBucket = {
   key: string
   label: string

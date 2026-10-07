@@ -10,12 +10,21 @@ import { SettingsModal } from './components/SettingsModal'
 import { Toaster } from './components/ui/toaster'
 import { Button } from './components/ui/button'
 import { Settings } from 'lucide-react'
+import { useToastStore } from './stores/toastStore'
 
 function App() {
-  const { user, setUser, isLightMode, reducedMotion, setExchangeRate } = useUserStore()
-  const { initializeCategories } = useDataStore()
+  const { user, setUser, isLightMode, setExchangeRate } = useUserStore()
+  const { initializeCategories, resetData } = useDataStore()
   const { isSettingsOpen, setIsSettingsOpen, isLoading, setIsLoading } = useUIStore()
   const categoriesInitializedForUser = useRef<string | null>(null)
+
+  // Theme tokens in index.css hang off a class on <html>, so the whole page
+  // (including modals portaled to body) follows the selected theme
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.toggle('light', isLightMode)
+    root.classList.toggle('dark', !isLightMode)
+  }, [isLightMode])
 
   useEffect(() => {
     setIsLoading(true)
@@ -29,6 +38,11 @@ function App() {
     // Listen for auth changes FIRST (before checking session)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
+      if (event === 'SIGNED_OUT') {
+        // Also covers logouts from another tab and expired sessions
+        resetData()
+        categoriesInitializedForUser.current = null
+      }
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         setIsLoading(false)
         // Initialize categories only once per user
@@ -67,6 +81,12 @@ function App() {
     const loadExchangeRate = async () => {
       try {
         const rate = await fetchExchangeRate()
+        if (rate === null) {
+          useToastStore.getState().addToast(
+            'No se pudo obtener la cotización del dólar. Los montos en USD no están disponibles por ahora.'
+          )
+          return
+        }
         setExchangeRate(rate)
       } catch (error) {
         console.error('Failed to load exchange rate:', error)
@@ -77,13 +97,15 @@ function App() {
 
   const handleLogout = async () => {
     setUser(null)
+    resetData()
+    categoriesInitializedForUser.current = null
     await supabase.auth.signOut()
   }
 
   if (isLoading) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${isLightMode ? 'bg-gradient-to-br from-violet-50 to-purple-50' : 'bg-black'}`}>
-        <div className={`text-xl font-semibold ${isLightMode ? 'text-violet-600' : 'text-primary glow-primary'}`}>Cargando...</div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-base font-medium text-muted-foreground">Cargando...</div>
       </div>
     )
   }
@@ -93,21 +115,21 @@ function App() {
   }
 
   return (
-    <div className={`min-h-screen pb-20 theme-transition ${reducedMotion ? '' : ''} ${isLightMode ? 'bg-gradient-to-br from-violet-50 to-purple-50' : 'bg-black'}`}>
+    <div className="min-h-screen pb-20 theme-transition bg-background">
       {/* Header */}
-      <header className={`backdrop-blur-md border-b sticky top-0 z-10 ${isLightMode ? 'bg-white/80 border-violet-100' : 'bg-card/80 border-border'}`}>
+      <header className="backdrop-blur-md border-b border-border sticky top-0 z-10 bg-background/80">
         <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div>
-            <h1 className={`text-xl font-bold ${isLightMode ? 'text-violet-900' : 'text-primary glow-primary'}`}>Gastitos</h1>
-            <p className={`text-xs ${isLightMode ? 'text-violet-600' : 'text-muted-foreground'}`}>Tu tracker de gastos</p>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">Gastitos</h1>
+            <p className="text-xs text-muted-foreground">Tu tracker de gastos</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`text-sm hidden sm:block ${isLightMode ? 'text-violet-700' : 'text-muted-foreground'}`}>{user.email}</span>
+            <span className="text-sm hidden sm:block text-muted-foreground">{user.email}</span>
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={() => setIsSettingsOpen(true)} 
-              className={`p-2 ${isLightMode ? 'text-violet-700' : 'text-primary hover:text-primary hover:bg-primary/10'}`}
+              className="p-2 text-muted-foreground hover:text-foreground"
               title="Configuración"
             >
               <Settings className="w-5 h-5" />
@@ -116,7 +138,7 @@ function App() {
               variant="ghost" 
               size="sm" 
               onClick={handleLogout} 
-              className={isLightMode ? 'text-violet-700' : 'text-muted-foreground hover:text-foreground'}
+              className="text-muted-foreground hover:text-foreground"
             >
               Salir
             </Button>

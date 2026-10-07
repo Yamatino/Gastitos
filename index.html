@@ -5,6 +5,13 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gastitos - Personal Finance Tracker</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a dark flash in light mode
+      try {
+        var light = JSON.parse(localStorage.getItem('gastitos-user-storage') || '{}').state?.isLightMode
+        document.documentElement.classList.add(light ? 'light' : 'dark')
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

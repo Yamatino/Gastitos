@@ -7,6 +7,8 @@ import { Input } from './ui/input'
 import { X, CreditCard, Wallet, TrendingUp, PiggyBank, ChevronDown } from 'lucide-react'
 import type { Category, Expense } from '../services/supabase'
 import { sanitizeDescription } from '../lib/validation'
+import { toDateKey } from '../lib/dateBuckets'
+import { fetchExchangeRate } from '../lib/api'
 import { useToastStore } from '../stores/toastStore'
 
 type TransactionType = 'expense' | 'income' | 'savings'
@@ -24,9 +26,10 @@ const getRawNumber = (formattedValue: string): number => {
   return parseFloat(formattedValue.replace(/\./g, '').replace(',', '.')) || 0
 }
 
-// PostgreSQL integer column limit
-const MAX_INT = 2147483647
-const isOutOfIntRange = (cents: number): boolean => cents > MAX_INT || cents < -MAX_INT
+// Sanity cap ($100.000 millones). Amounts are BIGINT in the database, so this is
+// far below any storage limit and well inside JS's safe-integer range.
+const MAX_AMOUNT_CENTS = 10_000_000_000_000
+const TOO_LARGE_MESSAGE = 'El monto es demasiado grande.'
 
 interface AddTransactionModalProps {
   isOpen: boolean
@@ -37,7 +40,7 @@ interface AddTransactionModalProps {
 }
 
 export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, editingExpense = null }: AddTransactionModalProps) {
-  const { user, exchangeRate } = useUserStore()
+  const { user, exchangeRate, exchangeRateAvailable, setExchangeRate } = useUserStore()
   const { addExpense, addInstallments, updateExpense } = useDataStore()
   const isEditMode = !!editingExpense
 
@@ -49,13 +52,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
   const [categoryId, setCategoryId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date()
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  })
+  const [selectedDate, setSelectedDate] = useState(() => toDateKey())
   const [currency, setCurrency] = useState<'ARS' | 'USD'>('ARS')
   
   // Expense-specific fields
@@ -76,11 +73,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
     setIsSalary(false)
     setCountForNextMonth(false)
     setCurrency('ARS')
-    const d = new Date()
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    setSelectedDate(`${year}-${month}-${day}`)
+    setSelectedDate(toDateKey())
   }
 
   // Populate the form when opening in edit mode, or clear it when opening fresh
@@ -152,6 +145,19 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
       const rawAmount = getRawNumber(amount)
       const description = sanitizeDescription(rawDescription)
 
+      // Edits keep the rate the transaction was saved with: re-pricing an old entry
+      // at today's rate would change its amounts when only fixing a typo.
+      let rate = isEditMode && editingExpense?.exchange_rate ? editingExpense.exchange_rate : exchangeRate
+      if (!isEditMode && !exchangeRateAvailable) {
+        const freshRate = await fetchExchangeRate()
+        if (freshRate === null) {
+          useToastStore.getState().addToast('No se pudo obtener la cotización del dólar. Revisá tu conexión e intentá de nuevo.')
+          return
+        }
+        setExchangeRate(freshRate)
+        rate = freshRate
+      }
+
       if (activeTab === 'expense') {
         // Handle expense
         let amountCents: number
@@ -160,22 +166,16 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
 
         if (currency === 'USD') {
           originalAmountCents = Math.round(rawAmount * 100)
-          amountCents = Math.round(originalAmountCents * exchangeRate)
+          amountCents = Math.round(originalAmountCents * rate)
           usdAmountCents = originalAmountCents
         } else {
           amountCents = Math.round(rawAmount * 100)
-          usdAmountCents = Math.round(amountCents / exchangeRate)
+          usdAmountCents = Math.round(amountCents / rate)
           originalAmountCents = undefined
         }
 
-        if (isOutOfIntRange(amountCents)) {
-          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
-          setIsLoading(false)
-          return
-        }
-        if (isOutOfIntRange(usdAmountCents)) {
-          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
-          setIsLoading(false)
+        if (amountCents > MAX_AMOUNT_CENTS) {
+          useToastStore.getState().addToast(TOO_LARGE_MESSAGE)
           return
         }
 
@@ -185,7 +185,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
             description,
             amount_cents: amountCents,
             currency: 'ARS',
-            exchange_rate: exchangeRate,
+            exchange_rate: rate,
             usd_amount_cents: usdAmountCents,
             original_currency: currency === 'USD' ? 'USD' : null,
             original_amount_cents: originalAmountCents ?? null,
@@ -203,9 +203,9 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
             description,
             amountCents,
             currency: 'ARS',
-            exchangeRate,
+            exchangeRate: rate,
             usdAmountCents,
-            categoryId: categoryId || null,
+            categoryId,
             installmentCount: installments,
             baseDate: selectedDate,
             billingDay: billingDayFromSettings
@@ -217,7 +217,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
             description,
             amount_cents: amountCents,
             currency: 'ARS',
-            exchange_rate: exchangeRate,
+            exchange_rate: rate,
             usd_amount_cents: usdAmountCents,
             original_currency: currency === 'USD' ? 'USD' : undefined,
             original_amount_cents: originalAmountCents,
@@ -237,16 +237,10 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
       } else if (activeTab === 'income') {
         // Handle income
         const amountCents = Math.round(rawAmount * 100)
-        const usdAmountCents = Math.round(amountCents / exchangeRate)
+        const usdAmountCents = Math.round(amountCents / rate)
 
-        if (isOutOfIntRange(amountCents)) {
-          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
-          setIsLoading(false)
-          return
-        }
-        if (isOutOfIntRange(usdAmountCents)) {
-          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
-          setIsLoading(false)
+        if (amountCents > MAX_AMOUNT_CENTS) {
+          useToastStore.getState().addToast(TOO_LARGE_MESSAGE)
           return
         }
 
@@ -264,7 +258,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
             description,
             amount_cents: -amountCents, // Negative for income
             currency: 'ARS',
-            exchange_rate: exchangeRate,
+            exchange_rate: rate,
             usd_amount_cents: -usdAmountCents,
             category_id: null, // No category for income
             payment_method: 'debit',
@@ -282,16 +276,10 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
       } else {
         // Handle savings
         const amountCents = Math.round(rawAmount * 100)
-        const usdAmountCents = Math.round(amountCents / exchangeRate)
+        const usdAmountCents = Math.round(amountCents / rate)
 
-        if (isOutOfIntRange(amountCents)) {
-          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 ARS')
-          setIsLoading(false)
-          return
-        }
-        if (isOutOfIntRange(usdAmountCents)) {
-          useToastStore.getState().addToast('El monto es demasiado grande. El máximo permitido es aproximadamente $21,474,836 USD')
-          setIsLoading(false)
+        if (amountCents > MAX_AMOUNT_CENTS) {
+          useToastStore.getState().addToast(TOO_LARGE_MESSAGE)
           return
         }
 
@@ -308,7 +296,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
             description,
             amount_cents: amountCents,
             currency: 'ARS',
-            exchange_rate: exchangeRate,
+            exchange_rate: rate,
             usd_amount_cents: usdAmountCents,
             category_id: null, // No category for savings
             payment_method: 'debit',
@@ -367,11 +355,11 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
   const getSubmitButtonClass = () => {
     switch (activeTab) {
       case 'expense':
-        return 'bg-primary hover:opacity-90 text-primary-foreground glow-primary'
+        return 'bg-primary hover:opacity-90 text-primary-foreground'
       case 'income':
-        return 'bg-success hover:opacity-90 text-white glow-success'
+        return 'bg-success hover:opacity-90 text-success-foreground'
       case 'savings':
-        return 'bg-primary hover:opacity-90 text-white glow-primary'
+        return 'bg-primary hover:opacity-90 text-primary-foreground'
     }
   }
 
@@ -386,7 +374,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
 
@@ -423,8 +411,8 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
                     ? tab === 'expense'
                       ? 'bg-primary text-primary-foreground'
                       : tab === 'income'
-                      ? 'bg-success text-white'
-                      : 'bg-primary text-white'
+                      ? 'bg-success text-success-foreground'
+                      : 'bg-primary text-primary-foreground'
                     : isEditMode
                     ? 'text-muted-foreground/40 cursor-not-allowed'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -467,7 +455,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
                       setAmount(formattedValue)
                     }}
                     placeholder="0"
-                    className="pl-12 text-lg font-mono-amount bg-background"
+                    className="pl-12 text-lg font-amount bg-background"
                     required
                   />
                 </div>
@@ -480,7 +468,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
                       onClick={() => setCurrency('ARS')}
                       className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                         currency === 'ARS'
-                          ? 'bg-primary text-primary-foreground glow-primary'
+                          ? 'bg-primary text-primary-foreground'
                           : 'bg-muted text-muted-foreground hover:bg-muted/80'
                       }`}
                     >
@@ -491,7 +479,7 @@ export function AddTransactionModal({ isOpen, onClose, onSuccess, categories, ed
                       onClick={() => setCurrency('USD')}
                       className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                         currency === 'USD'
-                          ? 'bg-primary text-primary-foreground glow-primary'
+                          ? 'bg-primary text-primary-foreground'
                           : 'bg-muted text-muted-foreground hover:bg-muted/80'
                       }`}
                     >
